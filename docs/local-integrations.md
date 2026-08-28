@@ -10,7 +10,9 @@
 - `GET /integrations/video-jiexi/tasks/{id}`：读取下载进度。
 - `POST /integrations/video-jiexi/import`：把已完成的文件复制到太阳鸟 `videoFile` 素材库并登记数据库。
 
-解析服务是可选提供方，默认不连接任何地址。部署时通过环境变量 `VIDEO_JIEXI_BASE_URL` 或运行时设置 `videoJiexiBaseUrl` 指定服务地址。只有在两个服务明确共享文件系统、且提供方没有文件接口时，才设置 `VIDEO_JIEXI_DOWNLOAD_DIR` 作为兼容回退；它没有默认路径。
+解析服务是可选提供方，默认不连接任何地址。部署时通过环境变量 `VIDEO_JIEXI_BASE_URL` 或运行时设置 `videoJiexiBaseUrl` 指定服务地址。远程服务建议同时配置 `VIDEO_JIEXI_API_TOKEN`（或 `videoJiexiApiToken`），太阳鸟会通过 `Authorization: Bearer …` 调用；未配置 Token 时仅适合同机受限部署。
+
+只有在两个服务明确共享文件系统、且提供方没有文件接口时，才设置 `VIDEO_JIEXI_DOWNLOAD_DIR` 作为兼容回退；它没有默认路径。
 
 提供方应实现 `GET /api/downloads/{id}/file`，这样太阳鸟只通过 HTTP 获取已完成文件，不依赖本机目录结构。
 

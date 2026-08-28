@@ -24,12 +24,20 @@ def download_root(settings=None):
     return Path(configured).expanduser() if configured else None
 
 
+def api_token(settings=None):
+    settings = settings or {}
+    return os.environ.get("VIDEO_JIEXI_API_TOKEN") or settings.get("videoJiexiApiToken") or ""
+
+
 def _request(path, method="GET", payload=None, timeout=15, settings=None):
     service_url = base_url(settings)
     if not service_url:
         raise VideoJiexiError("未配置 video-jiexi 服务地址，请设置 VIDEO_JIEXI_BASE_URL")
     body = None
     headers = {"Accept": "application/json"}
+    token = api_token(settings)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -71,7 +79,11 @@ def download_file(task_id, settings=None):
     service_url = base_url(settings)
     if not service_url:
         raise VideoJiexiError("未配置 video-jiexi 服务地址，请设置 VIDEO_JIEXI_BASE_URL")
-    request = urllib.request.Request(f"{service_url}/api/downloads/{task_id}/file", headers={"Accept": "*/*"}, method="GET")
+    headers = {"Accept": "*/*"}
+    token = api_token(settings)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(f"{service_url}/api/downloads/{task_id}/file", headers=headers, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=120) as response:
             filename = response.headers.get_filename() or "video.mp4"
