@@ -4,6 +4,7 @@ export * from './account'
 export * from './material'
 export * from './ownContent'
 export * from './scriptGeneration'
+export * from './integrations'
 
 // 可以在这里添加其他API模块的导出
 // export * from './product'

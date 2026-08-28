@@ -25,6 +25,18 @@
     </section>
 
     <section class="settings-section">
+      <div class="section-heading"><div><h2>外部能力服务</h2><p>地址可指向本机、局域网或公网服务；Token 只保存配置状态，不会回显。</p></div><el-tag :type="integrationStatus.type" effect="plain">{{ integrationStatus.label }}</el-tag></div>
+      <el-form :model="integrationForm" label-position="top" class="connection-form integration-form">
+        <el-form-item label="OpenCLI Admin 地址"><el-input v-model="integrationForm.opencliAdminBaseUrl" placeholder="https://collector.example.com/api/v1" /></el-form-item>
+        <el-form-item label="OpenCLI Admin Token"><el-input v-model="integrationForm.opencliAdminApiToken" type="password" show-password :placeholder="integrationForm.opencliAdminApiTokenConfigured ? '已配置，留空保持不变' : '可选 Bearer Token'" /></el-form-item>
+        <el-form-item label="video-jiexi 地址"><el-input v-model="integrationForm.videoJiexiBaseUrl" placeholder="https://parser.example.com" /></el-form-item>
+        <el-form-item label="video-jiexi Token"><el-input v-model="integrationForm.videoJiexiApiToken" type="password" show-password :placeholder="integrationForm.videoJiexiApiTokenConfigured ? '已配置，留空保持不变' : '可选 Bearer Token'" /></el-form-item>
+        <el-form-item label="共享目录回退（可选）"><el-input v-model="integrationForm.videoJiexiDownloadDir" placeholder="仅在服务没有文件接口时填写" /></el-form-item>
+      </el-form>
+      <div class="section-actions"><el-button type="primary" :loading="savingIntegrations" @click="saveIntegrations">保存集成配置</el-button><el-button :loading="testingIntegration" @click="testIntegration">检查 video-jiexi</el-button></div>
+    </section>
+
+    <section class="settings-section">
       <div class="section-heading">
         <div><h2>模型配置</h2><p>可从 Gateway 目录选择，也可手动填写。</p></div>
         <el-button type="primary" :icon="Plus" @click="openEditor()">添加模型</el-button>
@@ -82,14 +94,18 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { agentModelsApi } from '@/api/agentModels'
+import { integrationsApi } from '@/api/integrations'
 
 const loading = ref(false), savingConnection = ref(false), testingConnection = ref(false)
 const discovering = ref(false), savingModel = ref(false), savingTask = ref(false)
 const testingModelId = ref(''), editorVisible = ref(false), editingId = ref(''), catalogSelection = ref('')
+const savingIntegrations = ref(false), testingIntegration = ref(false)
 const models = ref([]), discoveredModels = ref([])
 const taskModels = reactive({ viralAnalysis: '' })
 const connectionStatus = reactive({ type: 'info', label: '未测试' })
+const integrationStatus = reactive({ type: 'info', label: '未检查' })
 const hermesForm = reactive({ gatewayUrl: 'http://127.0.0.1:8642', apiKey: '', apiKeyConfigured: false, timeout: 300 })
+const integrationForm = reactive({ opencliAdminBaseUrl: '', opencliAdminApiToken: '', opencliAdminApiTokenConfigured: false, videoJiexiBaseUrl: '', videoJiexiApiToken: '', videoJiexiApiTokenConfigured: false, videoJiexiDownloadDir: '' })
 const emptyEditor = () => ({ name: '', provider: '', model: '', reasoningEffort: '', serviceTier: '', enabled: true })
 const editor = reactive(emptyEditor())
 const enabledModels = computed(() => models.value.filter((item) => item.enabled))
@@ -114,11 +130,20 @@ const flattenCatalog = (payload) => {
 const loadAll = async () => {
   loading.value = true
   try {
-    const [hermes, configured] = await Promise.all([agentModelsApi.getHermesSettings(), agentModelsApi.getAgentModels()])
+    const [hermes, configured, integrations] = await Promise.all([agentModelsApi.getHermesSettings(), agentModelsApi.getAgentModels(), integrationsApi.getSettings()])
     Object.assign(hermesForm, hermes.data, { apiKey: '' })
     models.value = configured.data.models || []
     Object.assign(taskModels, configured.data.taskModels || {})
+    Object.assign(integrationForm, integrations.data, { opencliAdminApiToken: '', videoJiexiApiToken: '' })
   } finally { loading.value = false }
+}
+const saveIntegrations = async () => {
+  savingIntegrations.value = true
+  try { const r = await integrationsApi.saveSettings(integrationForm); Object.assign(integrationForm, r.data, { opencliAdminApiToken: '', videoJiexiApiToken: '' }); ElMessage.success('集成配置已保存') } finally { savingIntegrations.value = false }
+}
+const testIntegration = async () => {
+  testingIntegration.value = true
+  try { const r = await integrationsApi.videoJiexiStatus(); if (r.data?.available !== false && r.data?.health?.ok) { Object.assign(integrationStatus, { type: 'success', label: 'video-jiexi 在线' }); ElMessage.success('video-jiexi 连接正常') } else { Object.assign(integrationStatus, { type: 'warning', label: '未连接' }); ElMessage.warning(r.data?.error || 'video-jiexi 未连接') } } finally { testingIntegration.value = false }
 }
 const saveConnection = async () => {
   savingConnection.value = true

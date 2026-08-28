@@ -298,6 +298,50 @@ def hermes_settings_api():
     return jsonify({"code": 200, "message": "Hermes 配置已保存", "data": public_hermes_settings(settings)})
 
 
+@app.route("/settings/integrations", methods=["GET", "PUT"])
+def integrations_settings_api():
+    settings = load_runtime_settings()
+    if request.method == "GET":
+        return jsonify({"code": 200, "message": None, "data": {
+            "opencliAdminBaseUrl": opencli_monitor_service.get_base_url(settings),
+            "opencliAdminApiTokenConfigured": bool(opencli_monitor_service.get_api_token(settings)),
+            "videoJiexiBaseUrl": video_jiexi_client.base_url(settings),
+            "videoJiexiApiTokenConfigured": bool(video_jiexi_client.api_token(settings)),
+            "videoJiexiDownloadDir": str(video_jiexi_client.download_root(settings) or ""),
+        }})
+
+    payload = request.get_json(silent=True) or {}
+    opencli_url = str(payload.get("opencliAdminBaseUrl") or "").strip().rstrip("/")
+    video_url = str(payload.get("videoJiexiBaseUrl") or "").strip().rstrip("/")
+    for label, value in (("OpenCLI Admin", opencli_url), ("video-jiexi", video_url)):
+        if value and not re.match(r"^https?://", value, re.IGNORECASE):
+            return jsonify({"code": 400, "message": f"{label} 地址必须以 http:// 或 https:// 开头", "data": None}), 400
+
+    settings["opencliAdminBaseUrl"] = opencli_url
+    settings["videoJiexiBaseUrl"] = video_url
+    if payload.get("clearOpencliAdminApiToken"):
+        settings.pop("opencliAdminApiToken", None)
+    elif payload.get("opencliAdminApiToken"):
+        settings["opencliAdminApiToken"] = str(payload.get("opencliAdminApiToken")).strip()
+    if payload.get("clearVideoJiexiApiToken"):
+        settings.pop("videoJiexiApiToken", None)
+    elif payload.get("videoJiexiApiToken"):
+        settings["videoJiexiApiToken"] = str(payload.get("videoJiexiApiToken")).strip()
+    download_dir = str(payload.get("videoJiexiDownloadDir") or "").strip()
+    if download_dir:
+        settings["videoJiexiDownloadDir"] = download_dir
+    else:
+        settings.pop("videoJiexiDownloadDir", None)
+    save_runtime_settings(settings)
+    return jsonify({"code": 200, "message": "集成服务配置已保存", "data": {
+        "opencliAdminBaseUrl": opencli_monitor_service.get_base_url(settings),
+        "opencliAdminApiTokenConfigured": bool(opencli_monitor_service.get_api_token(settings)),
+        "videoJiexiBaseUrl": video_jiexi_client.base_url(settings),
+        "videoJiexiApiTokenConfigured": bool(video_jiexi_client.api_token(settings)),
+        "videoJiexiDownloadDir": str(video_jiexi_client.download_root(settings) or ""),
+    }})
+
+
 @app.route("/settings/hermes/test", methods=["POST"])
 def test_hermes_settings():
     try:
