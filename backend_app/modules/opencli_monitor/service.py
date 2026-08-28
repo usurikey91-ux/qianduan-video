@@ -27,6 +27,15 @@ def get_base_url(settings: dict[str, Any] | None = None) -> str:
     return str(value).rstrip("/")
 
 
+def get_api_token(settings: dict[str, Any] | None = None) -> str:
+    settings = settings or {}
+    return str(
+        os.environ.get("OPENCLI_ADMIN_API_TOKEN")
+        or settings.get("opencliAdminApiToken")
+        or ""
+    ).strip()
+
+
 def parse_douyin_sec_uid(value: str) -> tuple[str, str]:
     text = (value or "").strip()
     if not text:
@@ -71,11 +80,15 @@ def _request(
     if query:
         url = f"{url}?{urlencode(query)}"
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload else None
+    headers = {"Content-Type": "application/json"} if body else {}
+    token = get_api_token(settings)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = Request(
         url,
         data=body,
         method=method,
-        headers={"Content-Type": "application/json"} if body else {},
+        headers=headers,
     )
     try:
         with urlopen(request, timeout=timeout) as response:  # noqa: S310 - local URL is user-configured

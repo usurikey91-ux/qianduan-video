@@ -21,3 +21,20 @@
 太阳鸟本身已经保留并调用同源的 `uploader` 与发布记录模块，发布中心不再额外启动第二个 5409 服务，也不把 Cookie 发送到外部服务。这样可以避免两个后端争抢同一个端口，并保证发布记录、素材和账号状态都留在太阳鸟数据库中。
 
 原项目目录 `D:\ai-coding\视频一键分发\social-auto-upload` 继续作为参考实现和可替换源，不作为太阳鸟运行时依赖。
+
+## 公开部署配置
+
+太阳鸟前端生产构建默认使用同源 API（`VITE_API_BASE_URL` 留空），因此可以放在 Nginx、Caddy 或其他反向代理后。部署到独立域名或端口时再设置 `VITE_API_BASE_URL`。
+
+后端可用环境变量：
+
+```env
+SAU_BACKEND_HOST=0.0.0.0
+SAU_BACKEND_PORT=5409
+OPENCLI_ADMIN_BASE_URL=https://collector.example.com/api/v1
+OPENCLI_ADMIN_API_TOKEN=change-me
+VIDEO_JIEXI_BASE_URL=https://parser.example.com
+VIDEO_JIEXI_API_TOKEN=change-me
+```
+
+这些地址和 Token 也可以写入太阳鸟运行时 `settings.json`（字段名见上文），不要把真实 Token 提交到 GitHub。
