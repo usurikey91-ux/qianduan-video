@@ -1,0 +1,143 @@
+"""HTTP boundary for Sunbird's auxiliary OpenCLI Admin service."""
+
+import json
+import os
+import re
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode, urlparse
+from urllib.request import Request, urlopen
+
+
+DEFAULT_OPENCLI_ADMIN_URL = "http://127.0.0.1:8031/api/v1"
+
+
+class OpenCLIAdminError(RuntimeError):
+    """The auxiliary monitor cannot serve the requested operation."""
+
+
+def get_base_url(settings: dict[str, Any] | None = None) -> str:
+    settings = settings or {}
+    value = (
+        os.environ.get("OPENCLI_ADMIN_BASE_URL")
+        or os.environ.get("VITE_OPENCLI_ADMIN_BASE_URL")
+        or settings.get("opencliAdminBaseUrl")
+        or DEFAULT_OPENCLI_ADMIN_URL
+    )
+    return str(value).rstrip("/")
+
+
+def parse_douyin_sec_uid(value: str) -> tuple[str, str]:
+    text = (value or "").strip()
+    if not text:
+        raise ValueError("请粘贴抖音主页链接或 sec_uid")
+    if "://" not in text and "/" not in text:
+        return text, f"https://www.douyin.com/user/{text}"
+    if "://" not in text:
+        text = f"https://{text}"
+    parsed = urlparse(text)
+    if not parsed.hostname or not parsed.hostname.lower().endswith("douyin.com"):
+        raise ValueError("请输入 douyin.com 的主页链接")
+    match = re.search(r"/user/([^/?#]+)", parsed.path)
+    if not match:
+        raise ValueError("主页链接中缺少稳定账号 ID（sec_uid）")
+    sec_uid = match.group(1).strip()
+    if not sec_uid:
+        raise ValueError("主页链接中缺少稳定账号 ID（sec_uid）")
+    return sec_uid, f"https://www.douyin.com/user/{sec_uid}"
+
+
+def _read_error(exc: HTTPError) -> str:
+    try:
+        payload = json.loads(exc.read().decode("utf-8", errors="replace"))
+        return str(payload.get("detail") or payload.get("error") or payload)
+    except Exception:
+        return str(exc)
+
+
+def _request(
+    method: str,
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    query: dict[str, Any] | None = None,
+    settings: dict[str, Any] | None = None,
+    timeout: int = 30,
+) -> Any:
+    url = f"{get_base_url(settings)}{path}"
+    if query:
+        url = f"{url}?{urlencode(query)}"
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload else None
+    request = Request(
+        url,
+        data=body,
+        method=method,
+        headers={"Content-Type": "application/json"} if body else {},
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:  # noqa: S310 - local URL is user-configured
+            result = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise OpenCLIAdminError(_read_error(exc)) from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise OpenCLIAdminError(f"OpenCLI Admin 无法连接：{exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise OpenCLIAdminError("OpenCLI Admin 返回了无法解析的数据") from exc
+
+    if not result.get("success"):
+        raise OpenCLIAdminError(str(result.get("error") or "OpenCLI Admin 请求失败"))
+    return result.get("data")
+
+
+def bind_douyin_account(homepage_url: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    sec_uid, profile_url = parse_douyin_sec_uid(homepage_url)
+    result = _request(
+        "POST",
+        "/integrations/sunbird/accounts",
+        payload={
+            "platform": "douyin",
+            "external_account_id": sec_uid,
+            "profile_url": profile_url,
+        },
+        settings=settings,
+    )
+    return result if isinstance(result, dict) else {}
+
+
+def list_douyin_accounts(settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    result = _request(
+        "GET",
+        "/integrations/sunbird/accounts",
+        query={"platform": "douyin", "limit": 100},
+        settings=settings,
+    )
+    return result if isinstance(result, list) else []
+
+
+def check_account(account_id: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    result = _request(
+        "POST",
+        f"/integrations/sunbird/accounts/{quote(str(account_id), safe='')}/check",
+        settings=settings,
+    )
+    return result if isinstance(result, dict) else {}
+
+
+def list_analysis_queue(settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    works: list[dict[str, Any]] = []
+    for status in ("hot", "very_hot"):
+        result = _request(
+            "GET",
+            "/integrations/sunbird/works",
+            query={"status": status, "limit": 100},
+            settings=settings,
+        )
+        if isinstance(result, list):
+            works.extend(item for item in result if isinstance(item, dict))
+    return sorted(
+        works,
+        key=lambda item: (
+            not bool(item.get("priority")),
+            -float(item.get("relative_multiple") or 0),
+        ),
+    )

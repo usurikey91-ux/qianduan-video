@@ -51,6 +51,7 @@ from backend_app.agent.structured_runner import (
 from backend_app.modules.benchmark.prompts import build_video_analysis_prompt
 from backend_app.modules.benchmark import repository as benchmark_repository
 from backend_app.modules.benchmark.schemas import video_analysis_schema
+from backend_app.modules.opencli_monitor import service as opencli_monitor_service
 from backend_app.modules.idea_radar.prompts import build_transcript_radar_prompt as build_idea_radar_prompt
 from backend_app.modules.idea_radar import repository as idea_radar_repository
 from backend_app.modules.idea_radar.jobs import IdeaRadarJobRegistry
@@ -1720,6 +1721,47 @@ def add_douyin_benchmark_account():
         except Exception:
             pass
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
+
+
+@app.route('/benchmark/monitor/accounts', methods=['POST'])
+def bind_opencli_monitor_account():
+    """Register a benchmark account in the auxiliary OpenCLI Admin service."""
+    payload = request.get_json(silent=True) or {}
+    homepage_url = payload.get("homepageUrl") or payload.get("homepage_url") or payload.get("sec_uid")
+    try:
+        result = opencli_monitor_service.bind_douyin_account(homepage_url, load_runtime_settings())
+        return jsonify({"code": 200, "msg": "success", "data": result}), 201
+    except ValueError as exc:
+        return jsonify({"code": 400, "msg": str(exc), "data": None}), 400
+    except opencli_monitor_service.OpenCLIAdminError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/benchmark/monitor/accounts', methods=['GET'])
+def list_opencli_monitor_accounts():
+    try:
+        accounts = opencli_monitor_service.list_douyin_accounts(load_runtime_settings())
+        return jsonify({"code": 200, "msg": "success", "data": accounts}), 200
+    except opencli_monitor_service.OpenCLIAdminError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/benchmark/monitor/accounts/<account_id>/check', methods=['POST'])
+def check_opencli_monitor_account(account_id):
+    try:
+        result = opencli_monitor_service.check_account(account_id, load_runtime_settings())
+        return jsonify({"code": 202, "msg": "success", "data": result}), 202
+    except opencli_monitor_service.OpenCLIAdminError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/benchmark/monitor/works', methods=['GET'])
+def list_opencli_monitor_works():
+    try:
+        works = opencli_monitor_service.list_analysis_queue(load_runtime_settings())
+        return jsonify({"code": 200, "msg": "success", "data": works}), 200
+    except opencli_monitor_service.OpenCLIAdminError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
 
 
 @app.route('/benchmark/douyin/auto-discover', methods=['POST'])

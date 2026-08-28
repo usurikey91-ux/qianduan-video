@@ -4,6 +4,84 @@
       <h1>抖音对标管理</h1>
     </div>
 
+    <el-card shadow="never" class="monitor-card">
+      <template #header>
+        <div class="card-header">
+          <div>
+            <div class="monitor-title">自动监控与爆款队列</div>
+            <div class="monitor-subtitle">OpenCLI Admin 负责巡检；这里只显示相对账号自身表现较好的作品。</div>
+          </div>
+          <el-button :loading="monitorLoading" @click="refreshMonitor">刷新</el-button>
+        </div>
+      </template>
+
+      <div class="monitor-bind-row">
+        <el-input
+          v-model="monitorHomepageUrl"
+          clearable
+          placeholder="粘贴抖音主页链接或 sec_uid，添加一次后自动每4小时巡检"
+          @keyup.enter="bindMonitorAccount"
+        />
+        <el-button type="primary" :loading="monitorBinding" @click="bindMonitorAccount">添加监控账号</el-button>
+      </div>
+
+      <el-alert
+        v-if="monitorError"
+        :title="monitorError"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="monitor-alert"
+      />
+
+      <el-table v-if="monitorAccounts.length" :data="monitorAccounts" size="small" class="monitor-table">
+        <el-table-column label="账号" min-width="220">
+          <template #default="scope">
+            <div class="monitor-account-name">{{ scope.row.display_name || scope.row.handle || scope.row.external_account_id }}</div>
+            <div class="monitor-account-id">{{ scope.row.platform }} · {{ scope.row.external_account_id }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="采集状态" width="150">
+          <template #default="scope">
+            <el-tag :type="monitorStatusType(scope.row.collection_status)">{{ monitorStatusText(scope.row.collection_status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="last_success_at" label="最近成功" width="190" />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="scope">
+            <el-button size="small" :loading="monitorCheckingId === scope.row.id" @click="checkMonitorAccount(scope.row)">立即检查</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else-if="!monitorLoading" description="还没有绑定自动监控账号" :image-size="70" />
+
+      <div class="queue-heading">
+        <span>待分析作品</span>
+        <el-tag type="danger" effect="plain">特别火优先</el-tag>
+      </div>
+      <el-table v-if="monitorWorks.length" :data="monitorWorks" size="small" class="monitor-table">
+        <el-table-column label="作品" min-width="320">
+          <template #default="scope">
+            <el-link v-if="scope.row.url" :href="scope.row.url" target="_blank" type="primary">{{ scope.row.title || scope.row.external_work_id }}</el-link>
+            <span v-else>{{ scope.row.title || scope.row.external_work_id }}</span>
+            <div class="monitor-account-id">{{ scope.row.account?.display_name || scope.row.account?.external_account_id }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="热度" width="110">
+          <template #default="scope">
+            <el-tag :type="scope.row.priority ? 'danger' : 'warning'">{{ scope.row.priority ? '特别火' : '火' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="相对倍数" width="110">
+          <template #default="scope">{{ scope.row.relative_multiple ? `${scope.row.relative_multiple.toFixed(1)}x` : '-' }}</template>
+        </el-table-column>
+        <el-table-column label="公开数据" min-width="220">
+          <template #default="scope">{{ formatPublicMetrics(scope.row.latest_public_metrics) }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else-if="!monitorLoading" description="暂无达到热度阈值的作品" :image-size="70" />
+    </el-card>
+
     <el-card shadow="never" class="add-card">
       <el-form label-width="100px">
         <el-form-item label="主页链接">
@@ -359,6 +437,13 @@ const analysisLoading = ref(false)
 const analyzingId = ref(null)
 const selectedVideo = ref(null)
 const videoAnalysis = ref(null)
+const monitorHomepageUrl = ref('')
+const monitorAccounts = ref([])
+const monitorWorks = ref([])
+const monitorLoading = ref(false)
+const monitorBinding = ref(false)
+const monitorCheckingId = ref(null)
+const monitorError = ref('')
 
 const avatarText = (account) => {
   return (account.nickname || '抖').slice(0, 1)
@@ -371,6 +456,78 @@ const statusText = (status) => {
     pending: '待同步'
   }
   return map[status] || status || '未知'
+}
+
+const monitorStatusText = (status) => {
+  const map = {
+    unconfigured: '未配置', ready: '待检查', checking: '检查中', ok: '正常',
+    account_invalid: '账号失效', login_required: '需要登录', login_expired: '登录失效',
+    missing_metric: '缺少数据字段', collection_failed: '采集失败', published_at_missing: '缺少发布时间'
+  }
+  return map[status] || status || '未知'
+}
+
+const monitorStatusType = (status) => {
+  if (status === 'ok') return 'success'
+  if (['account_invalid', 'login_required', 'login_expired', 'missing_metric', 'collection_failed', 'published_at_missing'].includes(status)) return 'danger'
+  if (status === 'checking') return 'warning'
+  return 'info'
+}
+
+const formatPublicMetrics = (metrics) => {
+  if (!metrics || typeof metrics !== 'object') return '-'
+  const labels = { like_count: '赞', favorite_count: '藏', comment_count: '评', share_count: '转', view_count: '播' }
+  return Object.entries(metrics).map(([key, value]) => `${labels[key] || key} ${value}`).join(' · ') || '-'
+}
+
+const refreshMonitor = async () => {
+  monitorLoading.value = true
+  monitorError.value = ''
+  try {
+    const [accountsResponse, worksResponse] = await Promise.all([
+      benchmarkApi.getOpencliMonitorAccounts(),
+      benchmarkApi.getOpencliMonitorWorks()
+    ])
+    monitorAccounts.value = accountsResponse.data || []
+    monitorWorks.value = worksResponse.data || []
+  } catch (error) {
+    monitorError.value = error?.message || 'OpenCLI Admin 未连接，请先启动本机辅助服务'
+  } finally {
+    monitorLoading.value = false
+  }
+}
+
+const bindMonitorAccount = async () => {
+  if (!monitorHomepageUrl.value.trim()) {
+    ElMessage.warning('请先粘贴抖音主页链接或 sec_uid')
+    return
+  }
+  monitorBinding.value = true
+  monitorError.value = ''
+  try {
+    await benchmarkApi.bindOpencliMonitorAccount(monitorHomepageUrl.value.trim())
+    monitorHomepageUrl.value = ''
+    ElMessage.success('账号已加入自动监控')
+    await refreshMonitor()
+  } catch (error) {
+    monitorError.value = error?.message || '绑定监控账号失败'
+  } finally {
+    monitorBinding.value = false
+  }
+}
+
+const checkMonitorAccount = async (account) => {
+  monitorCheckingId.value = account.id
+  monitorError.value = ''
+  try {
+    await benchmarkApi.checkOpencliMonitorAccount(account.id)
+    ElMessage.success('已提交检查任务')
+    await refreshMonitor()
+  } catch (error) {
+    monitorError.value = error?.message || '提交检查任务失败'
+  } finally {
+    monitorCheckingId.value = null
+  }
 }
 
 const fetchAccounts = async () => {
@@ -563,7 +720,9 @@ const regenerateVideoAnalysis = async () => {
   }
 }
 
-onMounted(fetchAccounts)
+onMounted(async () => {
+  await Promise.all([fetchAccounts(), refreshMonitor()])
+})
 </script>
 
 <style lang="scss" scoped>
@@ -580,7 +739,8 @@ onMounted(fetchAccounts)
 
   .add-card,
   .auto-card,
-  .videos-card {
+  .videos-card,
+  .monitor-card {
     margin-bottom: 16px;
   }
 
@@ -594,6 +754,46 @@ onMounted(fetchAccounts)
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .monitor-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #303133;
+  }
+
+  .monitor-subtitle,
+  .monitor-account-id {
+    margin-top: 4px;
+    color: #909399;
+    font-size: 12px;
+  }
+
+  .monitor-bind-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .monitor-alert {
+    margin-bottom: 14px;
+  }
+
+  .monitor-table {
+    margin-bottom: 18px;
+  }
+
+  .monitor-account-name {
+    font-weight: 600;
+  }
+
+  .queue-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0 12px;
+    font-size: 15px;
+    font-weight: 600;
   }
 
   .auto-options {
