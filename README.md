@@ -140,7 +140,7 @@
 
 ### OpenCLI Admin 辅助监控
 
-太阳鸟的“对标内容库”可通过本机 OpenCLI Admin 自动发现抖音对标账号的新作品，并读取 `hot`/`very_hot` 待分析队列。默认连接 `http://127.0.0.1:8031/api/v1`；如辅助服务使用其他地址，可设置环境变量 `OPENCLI_ADMIN_BASE_URL`，或在 `settings.json` 中配置 `opencliAdminBaseUrl`。该服务只负责采集和热度筛选，太阳鸟仍是主界面和内容生产系统。
+太阳鸟的“对标内容库”可通过可选的 OpenCLI Admin 服务自动发现抖音对标账号的新作品，并读取 `hot`/`very_hot` 待分析队列。部署时通过环境变量 `OPENCLI_ADMIN_BASE_URL`，或在 `settings.json` 中配置 `opencliAdminBaseUrl` 指定地址。该服务只负责采集和热度筛选，太阳鸟仍是主界面和内容生产系统。
 
 1.  **准备 Cookie**: 
     大多数平台需要登录后的 Cookie 信息才能进行操作。请参照 examples 目录下各 `get_xxx_cookie.py` 脚本（例如 get_douyin_cookie.py, get_ks_cookie.py）的说明，运行脚本以生成并保存 Cookie 文件（通常在 `cookies/[PLATFORM]_uploader/account.json`）。

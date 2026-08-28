@@ -143,7 +143,7 @@ const coverTitle = ref('')
 const covering = ref(false)
 const coverUrl = ref('')
 const portraitName = ref('')
-const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5409'
+const apiBase = import.meta.env.VITE_API_BASE_URL || ''
 const router = useRouter()
 
 const statusLabel = {

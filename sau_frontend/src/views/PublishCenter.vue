@@ -454,7 +454,7 @@ import { materialApi } from '@/api/material'
 import { kouboApi } from '@/api/koubo'
 
 // API base URL
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5409'
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
 
 // Authorization headers
 const authHeaders = computed(() => ({

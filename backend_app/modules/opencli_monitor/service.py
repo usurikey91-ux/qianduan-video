@@ -9,7 +9,7 @@ from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
-DEFAULT_OPENCLI_ADMIN_URL = "http://127.0.0.1:8031/api/v1"
+DEFAULT_OPENCLI_ADMIN_URL = ""
 
 
 class OpenCLIAdminError(RuntimeError):
@@ -64,7 +64,10 @@ def _request(
     settings: dict[str, Any] | None = None,
     timeout: int = 30,
 ) -> Any:
-    url = f"{get_base_url(settings)}{path}"
+    base = get_base_url(settings)
+    if not base:
+        raise OpenCLIAdminError("未配置 OpenCLI Admin 地址，请设置 OPENCLI_ADMIN_BASE_URL")
+    url = f"{base}{path}"
     if query:
         url = f"{url}?{urlencode(query)}"
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload else None
