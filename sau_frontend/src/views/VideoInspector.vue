@@ -15,7 +15,7 @@
         <el-input v-model="url" clearable placeholder="粘贴抖音或其他平台分享链接" @keyup.enter="inspect" />
         <el-button type="primary" :loading="inspecting" @click="inspect">解析链接</el-button>
       </div>
-      <div class="service-note">服务地址：{{ serviceBaseUrl || 'http://127.0.0.1:4200' }}</div>
+      <div class="service-note">服务地址：{{ serviceBaseUrl || '未配置（请通过 VIDEO_JIEXI_BASE_URL 或运行时设置配置）' }}</div>
     </el-card>
 
     <el-card v-if="info" shadow="never" class="result-card">

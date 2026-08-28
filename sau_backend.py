@@ -1768,11 +1768,15 @@ def list_opencli_monitor_works():
 @app.route('/integrations/video-jiexi/status', methods=['GET'])
 def video_jiexi_status():
     """Return health information for the optional local video-jiexi service."""
+    settings = load_runtime_settings()
+    configured_url = video_jiexi_client.base_url(settings)
+    if not configured_url:
+        return jsonify({"code": 200, "msg": "success", "data": {"configured": False, "available": False, "base_url": ""}}), 200
     try:
-        health = video_jiexi_client.health()
-        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "base_url": video_jiexi_client.base_url(), "health": health}}), 200
+        health = video_jiexi_client.health(settings)
+        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "base_url": configured_url, "health": health}}), 200
     except video_jiexi_client.VideoJiexiError as exc:
-        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "base_url": video_jiexi_client.base_url(), "available": False, "error": str(exc)}}), 200
+        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "base_url": configured_url, "available": False, "error": str(exc)}}), 200
 
 
 @app.route('/integrations/video-jiexi/inspect', methods=['POST'])
@@ -1782,7 +1786,7 @@ def video_jiexi_inspect():
     if not url:
         return jsonify({"code": 400, "msg": "请提供视频链接", "data": None}), 400
     try:
-        result = video_jiexi_client.inspect(url, payload.get('cookieBrowser') or payload.get('cookie_browser') or '')
+        result = video_jiexi_client.inspect(url, payload.get('cookieBrowser') or payload.get('cookie_browser') or '', load_runtime_settings())
         return jsonify({"code": 200, "msg": "success", "data": result}), 200
     except video_jiexi_client.VideoJiexiError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
@@ -1799,6 +1803,7 @@ def video_jiexi_download():
             inspection_id,
             payload.get('formatId') or payload.get('format_id'),
             payload.get('kind') or 'video',
+            load_runtime_settings(),
         )
         return jsonify({"code": 202, "msg": "success", "data": result}), 202
     except video_jiexi_client.VideoJiexiError as exc:
@@ -1808,7 +1813,7 @@ def video_jiexi_download():
 @app.route('/integrations/video-jiexi/tasks/<task_id>', methods=['GET'])
 def video_jiexi_task(task_id):
     try:
-        result = video_jiexi_client.get_task(task_id)
+        result = video_jiexi_client.get_task(task_id, load_runtime_settings())
         return jsonify({"code": 200, "msg": "success", "data": result}), 200
     except video_jiexi_client.VideoJiexiError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
@@ -1821,17 +1826,22 @@ def video_jiexi_import():
     if not task_id:
         return jsonify({"code": 400, "msg": "缺少下载任务 ID", "data": None}), 400
     try:
-        task = video_jiexi_client.get_task(task_id)
+        settings = load_runtime_settings()
+        task = video_jiexi_client.get_task(task_id, settings)
         if task.get('state') != 'completed':
             return jsonify({"code": 409, "msg": "下载任务尚未完成", "data": task}), 409
-        source = video_jiexi_client.task_file_path(task)
-        original_name = source.name
+        try:
+            original_name, raw_content = video_jiexi_client.download_file(task_id, settings)
+        except video_jiexi_client.VideoJiexiError:
+            source = video_jiexi_client.task_file_path(task, settings)
+            original_name = source.name
+            raw_content = source.read_bytes()
         target_name = f"{uuid.uuid1()}_{original_name}"
         target = material_service.material_dir(BASE_DIR) / target_name
-        shutil.copy2(source, target)
+        target.write_bytes(raw_content)
         filesize = round(float(target.stat().st_size) / (1024 * 1024), 2)
         material_repository.add_file_record(get_db_path(), original_name, filesize, target_name)
-        return jsonify({"code": 200, "msg": "已导入太阳鸟素材库", "data": {"filename": original_name, "filepath": target_name, "filesize": filesize, "source": str(source)}}), 200
+        return jsonify({"code": 200, "msg": "已导入太阳鸟素材库", "data": {"filename": original_name, "filepath": target_name, "filesize": filesize}}), 200
     except video_jiexi_client.VideoJiexiError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
     except OSError as exc:
