@@ -27,6 +27,8 @@ VIDEO_JIEXI_BASE_URL=https://parser.example.com
 VIDEO_JIEXI_API_TOKEN=change-me
 ```
 
+仓库提供了不含密钥的 [settings.example.json](../settings.example.json) 样例，可复制为 `settings.json` 后填写。
+
 OpenCLI Admin 和 video-jiexi 可以部署在独立机器、容器或云服务中。太阳鸟通过 HTTP 调用，不要求共享代码仓库或本机目录。
 
 对标内容库中的 `hot`/`very_hot` 作品可以直接跳转到视频解析页，完成解析、下载和素材导入后，再进入太阳鸟已有的拆解与发布流程。
