@@ -2392,4 +2392,7 @@ def sse_stream(status_queue):
 
 if __name__ == '__main__':
     ensure_core_tables()
-    app.run(host='127.0.0.1', port=int(os.environ.get("SAU_BACKEND_PORT", "5409")))
+    app.run(
+        host=os.environ.get("SAU_BACKEND_HOST", "127.0.0.1"),
+        port=int(os.environ.get("SAU_BACKEND_PORT", "5409")),
+    )

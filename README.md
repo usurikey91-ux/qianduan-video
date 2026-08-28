@@ -122,7 +122,7 @@
     ```bash
     python sau_backend.py
     ```
-    后端项目将在 `http://localhost:5409` 启动。
+    后端项目默认在 `http://localhost:5409` 启动。部署到服务器时可通过 `SAU_BACKEND_HOST` 和 `SAU_BACKEND_PORT` 配置监听地址与端口；生产环境建议放在反向代理后。
 
 7.  **启动前端项目**:
     ```bash
