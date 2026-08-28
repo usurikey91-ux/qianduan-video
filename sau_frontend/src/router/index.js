@@ -11,6 +11,7 @@ import OwnContentReview from '../views/OwnContentReview.vue'
 import Login from '../views/Login.vue'
 import AgentModels from '../views/AgentModels.vue'
 import KouboStudio from '../views/KouboStudio.vue'
+import VideoInspector from '../views/VideoInspector.vue'
 
 const routes = [
   {
@@ -68,6 +69,11 @@ const routes = [
     path: '/koubo-studio',
     name: 'KouboStudio',
     component: KouboStudio
+  },
+  {
+    path: '/video-inspector',
+    name: 'VideoInspector',
+    component: VideoInspector
   },
   {
     path: '/about',

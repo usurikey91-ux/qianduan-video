@@ -52,6 +52,7 @@ from backend_app.modules.benchmark.prompts import build_video_analysis_prompt
 from backend_app.modules.benchmark import repository as benchmark_repository
 from backend_app.modules.benchmark.schemas import video_analysis_schema
 from backend_app.modules.opencli_monitor import service as opencli_monitor_service
+from backend_app.modules.video_jiexi import client as video_jiexi_client
 from backend_app.modules.idea_radar.prompts import build_transcript_radar_prompt as build_idea_radar_prompt
 from backend_app.modules.idea_radar import repository as idea_radar_repository
 from backend_app.modules.idea_radar.jobs import IdeaRadarJobRegistry
@@ -1762,6 +1763,79 @@ def list_opencli_monitor_works():
         return jsonify({"code": 200, "msg": "success", "data": works}), 200
     except opencli_monitor_service.OpenCLIAdminError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/integrations/video-jiexi/status', methods=['GET'])
+def video_jiexi_status():
+    """Return health information for the optional local video-jiexi service."""
+    try:
+        health = video_jiexi_client.health()
+        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "base_url": video_jiexi_client.base_url(), "health": health}}), 200
+    except video_jiexi_client.VideoJiexiError as exc:
+        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "base_url": video_jiexi_client.base_url(), "available": False, "error": str(exc)}}), 200
+
+
+@app.route('/integrations/video-jiexi/inspect', methods=['POST'])
+def video_jiexi_inspect():
+    payload = request.get_json(silent=True) or {}
+    url = str(payload.get('url') or '').strip()
+    if not url:
+        return jsonify({"code": 400, "msg": "请提供视频链接", "data": None}), 400
+    try:
+        result = video_jiexi_client.inspect(url, payload.get('cookieBrowser') or payload.get('cookie_browser') or '')
+        return jsonify({"code": 200, "msg": "success", "data": result}), 200
+    except video_jiexi_client.VideoJiexiError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/integrations/video-jiexi/download', methods=['POST'])
+def video_jiexi_download():
+    payload = request.get_json(silent=True) or {}
+    inspection_id = str(payload.get('inspectionId') or payload.get('inspection_id') or '').strip()
+    if not inspection_id:
+        return jsonify({"code": 400, "msg": "缺少解析结果 ID", "data": None}), 400
+    try:
+        result = video_jiexi_client.start_download(
+            inspection_id,
+            payload.get('formatId') or payload.get('format_id'),
+            payload.get('kind') or 'video',
+        )
+        return jsonify({"code": 202, "msg": "success", "data": result}), 202
+    except video_jiexi_client.VideoJiexiError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/integrations/video-jiexi/tasks/<task_id>', methods=['GET'])
+def video_jiexi_task(task_id):
+    try:
+        result = video_jiexi_client.get_task(task_id)
+        return jsonify({"code": 200, "msg": "success", "data": result}), 200
+    except video_jiexi_client.VideoJiexiError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/integrations/video-jiexi/import', methods=['POST'])
+def video_jiexi_import():
+    payload = request.get_json(silent=True) or {}
+    task_id = str(payload.get('taskId') or payload.get('task_id') or '').strip()
+    if not task_id:
+        return jsonify({"code": 400, "msg": "缺少下载任务 ID", "data": None}), 400
+    try:
+        task = video_jiexi_client.get_task(task_id)
+        if task.get('state') != 'completed':
+            return jsonify({"code": 409, "msg": "下载任务尚未完成", "data": task}), 409
+        source = video_jiexi_client.task_file_path(task)
+        original_name = source.name
+        target_name = f"{uuid.uuid1()}_{original_name}"
+        target = material_service.material_dir(BASE_DIR) / target_name
+        shutil.copy2(source, target)
+        filesize = round(float(target.stat().st_size) / (1024 * 1024), 2)
+        material_repository.add_file_record(get_db_path(), original_name, filesize, target_name)
+        return jsonify({"code": 200, "msg": "已导入太阳鸟素材库", "data": {"filename": original_name, "filepath": target_name, "filesize": filesize, "source": str(source)}}), 200
+    except video_jiexi_client.VideoJiexiError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+    except OSError as exc:
+        return jsonify({"code": 500, "msg": f"导入素材失败：{exc}", "data": None}), 500
 
 
 @app.route('/benchmark/douyin/auto-discover', methods=['POST'])

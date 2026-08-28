@@ -40,6 +40,10 @@
           <el-icon><VideoCamera /></el-icon>
           <template #title>口播工作台</template>
         </el-menu-item>
+        <el-menu-item index="/video-inspector">
+          <el-icon><VideoPlay /></el-icon>
+          <template #title>视频解析</template>
+        </el-menu-item>
         <el-menu-item index="/publish-center">
           <el-icon><Upload /></el-icon>
           <template #title>发布中心</template>
@@ -105,7 +109,8 @@ import {
   TrendCharts,
   Upload,
   User,
-  VideoCamera
+  VideoCamera,
+  VideoPlay
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -120,6 +125,7 @@ const pageMeta = {
   '/own-content-review': { kicker: 'Review', title: '作品复盘' },
   '/material-management': { kicker: 'Assets', title: '素材资产' },
   '/koubo-studio': { kicker: 'Koubo Studio', title: '口播生产工作台' },
+  '/video-inspector': { kicker: 'Video Jiexi', title: '视频解析' },
   '/publish-center': { kicker: 'Publish', title: '发布中心' },
   '/account-management': { kicker: 'Accounts', title: '账号管理' },
   '/data': { kicker: 'Data', title: '数据明细' },
