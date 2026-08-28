@@ -29,6 +29,8 @@ VIDEO_JIEXI_API_TOKEN=change-me
 
 OpenCLI Admin 和 video-jiexi 可以部署在独立机器、容器或云服务中。太阳鸟通过 HTTP 调用，不要求共享代码仓库或本机目录。
 
+对标内容库中的 `hot`/`very_hot` 作品可以直接跳转到视频解析页，完成解析、下载和素材导入后，再进入太阳鸟已有的拆解与发布流程。
+
 ## 生产注意事项
 
 - 使用 HTTPS 和反向代理，不直接暴露 Flask 开发服务器。
@@ -36,4 +38,3 @@ OpenCLI Admin 和 video-jiexi 可以部署在独立机器、容器或云服务�
 - 太阳鸟数据库、Cookie、素材目录应使用独立持久化卷。
 - video-jiexi 提供 `GET /api/downloads/{id}/file` 后，太阳鸟无需访问解析服务的文件系统。
 - 平台 Cookie 只保存在实际执行采集/发布的服务所在机器。
-

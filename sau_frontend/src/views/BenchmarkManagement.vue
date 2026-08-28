@@ -78,6 +78,11 @@
         <el-table-column label="公开数据" min-width="220">
           <template #default="scope">{{ formatPublicMetrics(scope.row.latest_public_metrics) }}</template>
         </el-table-column>
+        <el-table-column label="下一步" width="120" fixed="right">
+          <template #default="scope">
+            <el-button size="small" type="primary" :disabled="!scope.row.url" @click="openWorkInInspector(scope.row)">解析下载</el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <el-empty v-else-if="!monitorLoading" description="暂无达到热度阈值的作品" :image-size="70" />
     </el-card>
@@ -415,6 +420,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { benchmarkApi } from '@/api/benchmark'
 
@@ -444,6 +450,7 @@ const monitorLoading = ref(false)
 const monitorBinding = ref(false)
 const monitorCheckingId = ref(null)
 const monitorError = ref('')
+const router = useRouter()
 
 const avatarText = (account) => {
   return (account.nickname || '抖').slice(0, 1)
@@ -528,6 +535,11 @@ const checkMonitorAccount = async (account) => {
   } finally {
     monitorCheckingId.value = null
   }
+}
+
+const openWorkInInspector = (work) => {
+  if (!work?.url) return
+  router.push({ path: '/video-inspector', query: { url: work.url } })
 }
 
 const fetchAccounts = async () => {

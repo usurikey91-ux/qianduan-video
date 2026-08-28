@@ -51,6 +51,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { videoJiexiApi } from '@/api/videoJiexi'
 
@@ -62,6 +63,7 @@ const taskId = ref('')
 const inspecting = ref(false)
 const downloading = ref(false)
 const imported = ref(false)
+const route = useRoute()
 const serviceAvailable = ref(false)
 const serviceBaseUrl = ref('')
 let pollTimer
@@ -120,7 +122,14 @@ async function importMaterial() {
   ElMessage.success(response.msg || '已导入素材库')
 }
 
-onMounted(() => { checkStatus().catch(() => { serviceAvailable.value = false }) })
+onMounted(() => {
+  checkStatus().catch(() => { serviceAvailable.value = false })
+  const incomingUrl = String(route.query.url || '').trim()
+  if (incomingUrl) {
+    url.value = incomingUrl
+    window.setTimeout(() => { inspect().catch(() => {}) }, 120)
+  }
+})
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
 
