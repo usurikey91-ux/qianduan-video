@@ -5,12 +5,12 @@
         <div class="brand-mark">S</div>
         <div>
           <strong>Sunbird OS</strong>
-          <span>本地内容运营工作台</span>
+          <span>自媒体内容拆解工作台</span>
         </div>
       </div>
 
       <div class="login-copy">
-        <h1>登录本地软件</h1>
+        <h1>登录工作台</h1>
         <p>请输入本机管理员账号，登录后才能访问发布、账号和数据功能。</p>
       </div>
 

@@ -56,6 +56,33 @@ def parse_douyin_sec_uid(value: str) -> tuple[str, str]:
     return sec_uid, f"https://www.douyin.com/user/{sec_uid}"
 
 
+def parse_account_reference(platform: str, value: str) -> tuple[str, str | None]:
+    """Normalize a user-supplied account reference without coupling the UI to one site.
+
+    Douyin keeps its strict ``sec_uid`` validation for backwards compatibility. Other
+    platforms accept either a profile URL or a stable account identifier; the actual
+    platform adapter in OpenCLI Admin remains responsible for validating the reference.
+    """
+    normalized_platform = str(platform or "").strip().lower()
+    if normalized_platform == "douyin":
+        external_id, profile_url = parse_douyin_sec_uid(value)
+        return external_id, profile_url
+
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("请输入对标账号主页链接或稳定账号 ID")
+    if "://" not in text:
+        return text, None
+    parsed = urlparse(text)
+    if not parsed.hostname:
+        raise ValueError("账号主页链接无效")
+    path_parts = [part for part in parsed.path.split("/") if part]
+    external_id = path_parts[-1] if path_parts else parsed.hostname
+    if not external_id:
+        raise ValueError("主页链接中缺少稳定账号 ID")
+    return external_id, text
+
+
 def _read_error(exc: HTTPError) -> str:
     try:
         payload = json.loads(exc.read().decode("utf-8", errors="replace"))
@@ -105,29 +132,63 @@ def _request(
     return result.get("data")
 
 
-def bind_douyin_account(homepage_url: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
-    sec_uid, profile_url = parse_douyin_sec_uid(homepage_url)
+def bind_account(
+    platform: str,
+    account_reference: str,
+    settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    platform = str(platform or "").strip().lower()
+    if not platform:
+        raise ValueError("请选择采集平台")
+    external_account_id, profile_url = parse_account_reference(platform, account_reference)
+    payload = {
+        "platform": platform,
+        "external_account_id": external_account_id,
+    }
+    if profile_url:
+        payload["profile_url"] = profile_url
     result = _request(
         "POST",
         "/integrations/sunbird/accounts",
-        payload={
-            "platform": "douyin",
-            "external_account_id": sec_uid,
-            "profile_url": profile_url,
-        },
+        payload=payload,
         settings=settings,
     )
     return result if isinstance(result, dict) else {}
 
 
-def list_douyin_accounts(settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def bind_douyin_account(homepage_url: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Compatibility wrapper for existing Douyin callers."""
+    return bind_account("douyin", homepage_url, settings)
+
+
+def list_accounts(
+    platform: str | None = None,
+    settings: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    query: dict[str, Any] = {"limit": 100}
+    if platform:
+        query["platform"] = str(platform).strip().lower()
     result = _request(
         "GET",
         "/integrations/sunbird/accounts",
-        query={"platform": "douyin", "limit": 100},
+        query=query,
         settings=settings,
     )
     return result if isinstance(result, list) else []
+
+
+def list_platforms(settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    result = _request(
+        "GET",
+        "/integrations/sunbird/platforms",
+        settings=settings,
+    )
+    return result if isinstance(result, list) else []
+
+
+def list_douyin_accounts(settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Compatibility wrapper for existing Douyin callers."""
+    return list_accounts("douyin", settings)
 
 
 def check_account(account_id: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -139,13 +200,19 @@ def check_account(account_id: str, settings: dict[str, Any] | None = None) -> di
     return result if isinstance(result, dict) else {}
 
 
-def list_analysis_queue(settings: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def list_analysis_queue(
+    settings: dict[str, Any] | None = None,
+    platform: str | None = None,
+) -> list[dict[str, Any]]:
     works: list[dict[str, Any]] = []
     for status in ("hot", "very_hot"):
+        query = {"status": status, "limit": 100}
+        if platform:
+            query["platform"] = str(platform).strip().lower()
         result = _request(
             "GET",
             "/integrations/sunbird/works",
-            query={"status": status, "limit": 100},
+            query=query,
             settings=settings,
         )
         if isinstance(result, list):

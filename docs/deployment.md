@@ -8,8 +8,8 @@
 反向代理（同源 HTTPS）
   ├─ 太阳鸟前端静态文件
   └─ 太阳鸟后端
-       ├─ OpenCLI Admin（可选：账号巡检与热度筛选）
-       └─ video-jiexi（可选：视频解析与下载）
+       ├─ OpenCLI Admin（可选：多平台账号巡检与热度筛选）
+       └─ 视频解析服务（可选：视频解析与下载）
 ```
 
 ## 最小部署
@@ -29,7 +29,7 @@ VIDEO_JIEXI_API_TOKEN=change-me
 
 仓库提供了不含密钥的 [settings.example.json](../settings.example.json) 样例，可复制为 `settings.json` 后填写。
 
-OpenCLI Admin 和 video-jiexi 可以部署在独立机器、容器或云服务中。太阳鸟通过 HTTP 调用，不要求共享代码仓库或本机目录。
+OpenCLI Admin 和视频解析服务可以部署在独立机器、容器或云服务中。太阳鸟通过 HTTP 调用，不要求共享代码仓库或本机目录。未配置这些服务时，太阳鸟仍可启动并使用基础账号、素材和发布功能。
 
 对标内容库中的 `hot`/`very_hot` 作品可以直接跳转到视频解析页，完成解析、下载和素材导入后，再进入太阳鸟已有的拆解与发布流程。
 

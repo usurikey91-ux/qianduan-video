@@ -31,6 +31,26 @@ class OpenCLIAdminServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sec_uid"):
             service.parse_douyin_sec_uid("https://www.douyin.com/")
 
+    def test_parses_generic_platform_profile_reference(self):
+        external_id, profile_url = service.parse_account_reference(
+            "bilibili", "https://space.bilibili.com/12345"
+        )
+        self.assertEqual("12345", external_id)
+        self.assertEqual("https://space.bilibili.com/12345", profile_url)
+
+    def test_generic_account_binding_sends_platform(self):
+        with patch("backend_app.modules.opencli_monitor.service._request") as request:
+            request.return_value = {"created": True}
+            result = service.bind_account(
+                "bilibili",
+                "https://space.bilibili.com/12345",
+                settings={"opencliAdminBaseUrl": "http://collector.test/api/v1"},
+            )
+        self.assertEqual({"created": True}, result)
+        payload = request.call_args.kwargs["payload"]
+        self.assertEqual("bilibili", payload["platform"])
+        self.assertEqual("12345", payload["external_account_id"])
+
     @patch("backend_app.modules.opencli_monitor.service.urlopen")
     def test_bind_calls_auxiliary_service(self, mocked_urlopen):
         mocked_urlopen.return_value = _Response({"success": True, "data": {"created": True}})

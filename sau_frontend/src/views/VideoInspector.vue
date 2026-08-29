@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1>视频解析</h1>
-        <p>调用本机 video-jiexi 解析公开分享链接，下载后直接进入太阳鸟素材库。</p>
+        <p>调用已配置的视频解析服务处理公开分享链接，下载后直接进入太阳鸟素材库。</p>
       </div>
       <el-tag :type="serviceAvailable ? 'success' : 'warning'" effect="plain">
         {{ serviceAvailable ? '解析服务在线' : '解析服务未连接' }}
@@ -36,7 +36,7 @@
         </el-select>
         <el-button type="primary" :loading="downloading" @click="download">下载视频并导入素材库</el-button>
       </div>
-      <el-empty v-else description="当前版本先处理单条视频；图文或混合轮播可继续使用 video-jiexi 原页面下载" :image-size="60" />
+      <el-empty v-else description="当前版本先处理单条视频；图文或混合轮播取决于已配置的解析服务" :image-size="60" />
     </el-card>
 
     <el-card v-if="task" shadow="never" class="task-card">

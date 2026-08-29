@@ -7,7 +7,7 @@ def get_hermes_settings(settings=None):
     settings = settings or {}
     hermes = settings.get("hermes") if isinstance(settings.get("hermes"), dict) else {}
     return {
-        "gatewayUrl": str(hermes.get("gatewayUrl") or "http://127.0.0.1:8642").rstrip("/"),
+        "gatewayUrl": str(hermes.get("gatewayUrl") or "").rstrip("/"),
         "apiKey": str(hermes.get("apiKey") or ""),
         "timeout": max(10, min(int(hermes.get("timeout") or 300), 1800)),
     }

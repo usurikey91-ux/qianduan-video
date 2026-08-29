@@ -25,15 +25,15 @@
     </section>
 
     <section class="settings-section">
-      <div class="section-heading"><div><h2>外部能力服务</h2><p>地址可指向本机、局域网或公网服务；Token 只保存配置状态，不会回显。</p></div><el-tag :type="integrationStatus.type" effect="plain">{{ integrationStatus.label }}</el-tag></div>
+      <div class="section-heading"><div><h2>可选外部能力服务</h2><p>不配置也不影响基础账号管理和公开数据采集；地址可指向本机、局域网或公网服务。</p></div><el-tag :type="integrationStatus.type" effect="plain">{{ integrationStatus.label }}</el-tag></div>
       <el-form :model="integrationForm" label-position="top" class="connection-form integration-form">
         <el-form-item label="OpenCLI Admin 地址"><el-input v-model="integrationForm.opencliAdminBaseUrl" placeholder="https://collector.example.com/api/v1" /></el-form-item>
         <el-form-item label="OpenCLI Admin Token"><el-input v-model="integrationForm.opencliAdminApiToken" type="password" show-password :placeholder="integrationForm.opencliAdminApiTokenConfigured ? '已配置，留空保持不变' : '可选 Bearer Token'" /></el-form-item>
-        <el-form-item label="video-jiexi 地址"><el-input v-model="integrationForm.videoJiexiBaseUrl" placeholder="https://parser.example.com" /></el-form-item>
-        <el-form-item label="video-jiexi Token"><el-input v-model="integrationForm.videoJiexiApiToken" type="password" show-password :placeholder="integrationForm.videoJiexiApiTokenConfigured ? '已配置，留空保持不变' : '可选 Bearer Token'" /></el-form-item>
+        <el-form-item label="视频解析服务地址"><el-input v-model="integrationForm.videoJiexiBaseUrl" placeholder="https://parser.example.com" /></el-form-item>
+        <el-form-item label="视频解析服务 Token"><el-input v-model="integrationForm.videoJiexiApiToken" type="password" show-password :placeholder="integrationForm.videoJiexiApiTokenConfigured ? '已配置，留空保持不变' : '可选 Bearer Token'" /></el-form-item>
         <el-form-item label="共享目录回退（可选）"><el-input v-model="integrationForm.videoJiexiDownloadDir" placeholder="仅在服务没有文件接口时填写" /></el-form-item>
       </el-form>
-      <div class="section-actions"><el-button type="primary" :loading="savingIntegrations" @click="saveIntegrations">保存集成配置</el-button><el-button :loading="testingIntegration" @click="testIntegration">检查 video-jiexi</el-button></div>
+      <div class="section-actions"><el-button type="primary" :loading="savingIntegrations" @click="saveIntegrations">保存集成配置</el-button><el-button :loading="testingIntegration" @click="testIntegration">检查视频解析服务</el-button></div>
     </section>
 
     <section class="settings-section">
@@ -104,7 +104,7 @@ const models = ref([]), discoveredModels = ref([])
 const taskModels = reactive({ viralAnalysis: '' })
 const connectionStatus = reactive({ type: 'info', label: '未测试' })
 const integrationStatus = reactive({ type: 'info', label: '未检查' })
-const hermesForm = reactive({ gatewayUrl: 'http://127.0.0.1:8642', apiKey: '', apiKeyConfigured: false, timeout: 300 })
+const hermesForm = reactive({ gatewayUrl: '', apiKey: '', apiKeyConfigured: false, timeout: 300 })
 const integrationForm = reactive({ opencliAdminBaseUrl: '', opencliAdminApiToken: '', opencliAdminApiTokenConfigured: false, videoJiexiBaseUrl: '', videoJiexiApiToken: '', videoJiexiApiTokenConfigured: false, videoJiexiDownloadDir: '' })
 const emptyEditor = () => ({ name: '', provider: '', model: '', reasoningEffort: '', serviceTier: '', enabled: true })
 const editor = reactive(emptyEditor())
@@ -143,7 +143,7 @@ const saveIntegrations = async () => {
 }
 const testIntegration = async () => {
   testingIntegration.value = true
-  try { const r = await integrationsApi.videoJiexiStatus(); if (r.data?.available !== false && r.data?.health?.ok) { Object.assign(integrationStatus, { type: 'success', label: 'video-jiexi 在线' }); ElMessage.success('video-jiexi 连接正常') } else { Object.assign(integrationStatus, { type: 'warning', label: '未连接' }); ElMessage.warning(r.data?.error || 'video-jiexi 未连接') } } finally { testingIntegration.value = false }
+  try { const r = await integrationsApi.videoJiexiStatus(); if (r.data?.available !== false && r.data?.health?.ok) { Object.assign(integrationStatus, { type: 'success', label: '视频解析服务在线' }); ElMessage.success('视频解析服务连接正常') } else { Object.assign(integrationStatus, { type: 'warning', label: '未连接' }); ElMessage.warning(r.data?.error || '视频解析服务未连接') } } finally { testingIntegration.value = false }
 }
 const saveConnection = async () => {
   savingConnection.value = true

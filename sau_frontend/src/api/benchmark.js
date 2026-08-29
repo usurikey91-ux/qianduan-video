@@ -1,20 +1,22 @@
 import { http } from '@/utils/request'
 
 export const benchmarkApi = {
-  bindOpencliMonitorAccount: (homepageUrl) => {
-    return http.post('/benchmark/monitor/accounts', { homepageUrl })
+  getPlatforms: () => http.get('/benchmark/platforms'),
+
+  bindOpencliMonitorAccount: (accountRef, platform = 'douyin') => {
+    return http.post('/benchmark/monitor/accounts', { accountRef, platform })
   },
 
-  getOpencliMonitorAccounts: () => {
-    return http.get('/benchmark/monitor/accounts')
+  getOpencliMonitorAccounts: (platform = '') => {
+    return http.get('/benchmark/monitor/accounts', platform ? { platform } : undefined)
   },
 
   checkOpencliMonitorAccount: (accountId) => {
     return http.post(`/benchmark/monitor/accounts/${accountId}/check`)
   },
 
-  getOpencliMonitorWorks: () => {
-    return http.get('/benchmark/monitor/works')
+  getOpencliMonitorWorks: (platform = '') => {
+    return http.get('/benchmark/monitor/works', platform ? { platform } : undefined)
   },
 
   addDouyinAccount: (homepageUrl) => {

@@ -1,7 +1,7 @@
 <template>
   <div class="benchmark-management">
     <div class="page-header">
-      <h1>抖音对标管理</h1>
+      <h1>对标账号管理</h1>
     </div>
 
     <el-card shadow="never" class="monitor-card">
@@ -9,20 +9,24 @@
         <div class="card-header">
           <div>
             <div class="monitor-title">自动监控与爆款队列</div>
-            <div class="monitor-subtitle">OpenCLI Admin 负责巡检；这里只显示相对账号自身表现较好的作品。</div>
+            <div class="monitor-subtitle">采集服务负责巡检；这里只显示相对账号自身表现较好的作品。</div>
           </div>
           <el-button :loading="monitorLoading" @click="refreshMonitor">刷新</el-button>
         </div>
       </template>
 
       <div class="monitor-bind-row">
+        <el-select v-model="monitorPlatform" class="platform-select" placeholder="平台">
+          <el-option label="自动识别" value="auto" />
+          <el-option v-for="item in platformOptions" :key="item.id" :label="item.label || item.id" :value="item.id" />
+        </el-select>
         <el-input
           v-model="monitorHomepageUrl"
           clearable
-          placeholder="粘贴抖音主页链接或 sec_uid，添加一次后自动每4小时巡检"
+          placeholder="粘贴对标账号主页链接或稳定账号 ID，添加一次后自动巡检"
           @keyup.enter="bindMonitorAccount"
         />
-        <el-button type="primary" :loading="monitorBinding" @click="bindMonitorAccount">添加监控账号</el-button>
+          <el-button type="primary" :loading="monitorBinding" @click="bindMonitorAccount">添加对标账号</el-button>
       </div>
 
       <el-alert
@@ -88,6 +92,9 @@
     </el-card>
 
     <el-card shadow="never" class="add-card">
+      <template #header>
+        <div class="card-header"><span>平台作品库（兼容模式）</span><el-tag effect="plain">当前提供抖音适配器</el-tag></div>
+      </template>
       <el-form label-width="100px">
         <el-form-item label="主页链接">
           <div class="add-row">
@@ -444,6 +451,16 @@ const analyzingId = ref(null)
 const selectedVideo = ref(null)
 const videoAnalysis = ref(null)
 const monitorHomepageUrl = ref('')
+const monitorPlatform = ref('auto')
+const platformOptions = ref([
+  { id: 'douyin', label: '抖音' },
+  { id: 'xiaohongshu', label: '小红书' },
+  { id: 'bilibili', label: '哔哩哔哩' },
+  { id: 'kuaishou', label: '快手' },
+  { id: 'weibo', label: '微博' },
+  { id: 'youtube', label: 'YouTube' },
+  { id: 'tiktok', label: 'TikTok' }
+])
 const monitorAccounts = ref([])
 const monitorWorks = ref([])
 const monitorLoading = ref(false)
@@ -451,6 +468,18 @@ const monitorBinding = ref(false)
 const monitorCheckingId = ref(null)
 const monitorError = ref('')
 const router = useRouter()
+
+const detectPlatform = (value) => {
+  const text = String(value || '').toLowerCase()
+  if (text.includes('douyin.com')) return 'douyin'
+  if (text.includes('xiaohongshu.com') || text.includes('xhslink.com')) return 'xiaohongshu'
+  if (text.includes('bilibili.com')) return 'bilibili'
+  if (text.includes('kuaishou.com')) return 'kuaishou'
+  if (text.includes('weibo.com')) return 'weibo'
+  if (text.includes('youtube.com') || text.includes('youtu.be')) return 'youtube'
+  if (text.includes('tiktok.com')) return 'tiktok'
+  return ''
+}
 
 const avatarText = (account) => {
   return (account.nickname || '抖').slice(0, 1)
@@ -498,22 +527,40 @@ const refreshMonitor = async () => {
     monitorAccounts.value = accountsResponse.data || []
     monitorWorks.value = worksResponse.data || []
   } catch (error) {
-    monitorError.value = error?.message || 'OpenCLI Admin 未连接，请先启动本机辅助服务'
+    monitorError.value = error?.message || '采集服务未连接，请先配置并启动采集服务'
   } finally {
     monitorLoading.value = false
   }
 }
 
+const loadPlatforms = async () => {
+  try {
+    const response = await benchmarkApi.getPlatforms()
+    const configured = response.data || []
+    if (configured.length) platformOptions.value = configured
+  } catch {
+    // The platform list is optional; keep the generic fallback options for an unconfigured service.
+  }
+}
+
 const bindMonitorAccount = async () => {
   if (!monitorHomepageUrl.value.trim()) {
-    ElMessage.warning('请先粘贴抖音主页链接或 sec_uid')
+    ElMessage.warning('请先粘贴对标账号主页链接或稳定账号 ID')
     return
   }
   monitorBinding.value = true
   monitorError.value = ''
   try {
-    await benchmarkApi.bindOpencliMonitorAccount(monitorHomepageUrl.value.trim())
+    const selectedPlatform = monitorPlatform.value === 'auto'
+      ? detectPlatform(monitorHomepageUrl.value)
+      : monitorPlatform.value
+    if (!selectedPlatform) {
+      monitorError.value = '无法从链接识别平台，请手动选择平台'
+      return
+    }
+    await benchmarkApi.bindOpencliMonitorAccount(monitorHomepageUrl.value.trim(), selectedPlatform)
     monitorHomepageUrl.value = ''
+    monitorPlatform.value = 'auto'
     ElMessage.success('账号已加入自动监控')
     await refreshMonitor()
   } catch (error) {
@@ -733,7 +780,7 @@ const regenerateVideoAnalysis = async () => {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchAccounts(), refreshMonitor()])
+  await Promise.all([fetchAccounts(), refreshMonitor(), loadPlatforms()])
 })
 </script>
 
@@ -785,6 +832,11 @@ onMounted(async () => {
     display: flex;
     gap: 12px;
     margin-bottom: 14px;
+
+    .platform-select {
+      width: 140px;
+      flex: 0 0 140px;
+    }
   }
 
   .monitor-alert {

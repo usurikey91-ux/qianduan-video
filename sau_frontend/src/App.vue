@@ -6,7 +6,7 @@
         <div class="brand-mark">S</div>
         <div v-show="!isCollapse" class="brand-copy">
           <strong>Sunbird OS</strong>
-          <span>本地内容运营工作台</span>
+          <span>自媒体内容拆解工作台</span>
         </div>
       </div>
 

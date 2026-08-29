@@ -1539,23 +1539,34 @@ ensure_publish_records_table()
 ensure_douyin_benchmark_tables()
 ensure_douyin_own_tables()
 
-# 获取当前目录（假设 index.html 和 assets 在这里）
+# 获取当前目录。开发环境由 Vite 提供前端，打包环境优先使用前端构建产物。
 current_dir = os.path.dirname(os.path.abspath(__file__))
+frontend_dist_dir = os.path.join(current_dir, 'sau_frontend', 'dist')
 
-# 处理所有静态资源请求（未来打包用）
-@app.route('/assets/<filename>')
+# 处理打包后的前端资源请求，同时保留旧版 assets 目录兼容性。
+@app.route('/assets/<path:filename>')
 def custom_static(filename):
+    dist_assets_dir = os.path.join(frontend_dist_dir, 'assets')
+    if os.path.isfile(os.path.join(dist_assets_dir, filename)):
+        return send_from_directory(dist_assets_dir, filename)
     return send_from_directory(os.path.join(current_dir, 'assets'), filename)
 
 # 处理 favicon.ico 静态资源（未来打包用）
 @app.route('/favicon.ico')
-def favicon(filename):
+def favicon():
     return send_from_directory(os.path.join(current_dir, 'assets'), 'favicon.ico')
 
-# （未来打包用）
+# 打包模式直接提供 Vite 构建产物；未构建前返回可操作的健康信息，避免 500。
 @app.route('/')
 def hello_world():  # put application's code here
-    return render_template('index.html')
+    frontend_index = os.path.join(frontend_dist_dir, 'index.html')
+    if os.path.isfile(frontend_index):
+        return send_from_directory(frontend_dist_dir, 'index.html')
+    return jsonify({
+        "code": 200,
+        "msg": "Sunbird backend is online. Run npm.cmd run build in sau_frontend to serve the UI.",
+        "data": {"frontend": "not_built"},
+    })
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -1770,11 +1781,21 @@ def add_douyin_benchmark_account():
 
 @app.route('/benchmark/monitor/accounts', methods=['POST'])
 def bind_opencli_monitor_account():
-    """Register a benchmark account in the auxiliary OpenCLI Admin service."""
+    """Register a platform-agnostic benchmark account in OpenCLI Admin."""
     payload = request.get_json(silent=True) or {}
-    homepage_url = payload.get("homepageUrl") or payload.get("homepage_url") or payload.get("sec_uid")
+    platform = str(payload.get("platform") or "douyin").strip().lower()
+    account_reference = (
+        payload.get("accountRef")
+        or payload.get("account_ref")
+        or payload.get("homepageUrl")
+        or payload.get("homepage_url")
+        or payload.get("external_account_id")
+        or payload.get("sec_uid")
+    )
     try:
-        result = opencli_monitor_service.bind_douyin_account(homepage_url, load_runtime_settings())
+        result = opencli_monitor_service.bind_account(
+            platform, account_reference, load_runtime_settings()
+        )
         return jsonify({"code": 200, "msg": "success", "data": result}), 201
     except ValueError as exc:
         return jsonify({"code": 400, "msg": str(exc), "data": None}), 400
@@ -1782,10 +1803,23 @@ def bind_opencli_monitor_account():
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
 
 
+@app.route('/benchmark/platforms', methods=['GET'])
+def list_benchmark_platforms():
+    """List platform adapters configured in the optional collection service."""
+    try:
+        platforms = opencli_monitor_service.list_platforms(load_runtime_settings())
+        return jsonify({"code": 200, "msg": "success", "data": platforms}), 200
+    except opencli_monitor_service.OpenCLIAdminError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
 @app.route('/benchmark/monitor/accounts', methods=['GET'])
 def list_opencli_monitor_accounts():
     try:
-        accounts = opencli_monitor_service.list_douyin_accounts(load_runtime_settings())
+        platform = request.args.get("platform") or None
+        accounts = opencli_monitor_service.list_accounts(
+            platform, load_runtime_settings()
+        )
         return jsonify({"code": 200, "msg": "success", "data": accounts}), 200
     except opencli_monitor_service.OpenCLIAdminError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
@@ -1803,7 +1837,10 @@ def check_opencli_monitor_account(account_id):
 @app.route('/benchmark/monitor/works', methods=['GET'])
 def list_opencli_monitor_works():
     try:
-        works = opencli_monitor_service.list_analysis_queue(load_runtime_settings())
+        platform = request.args.get("platform") or None
+        works = opencli_monitor_service.list_analysis_queue(
+            load_runtime_settings(), platform=platform
+        )
         return jsonify({"code": 200, "msg": "success", "data": works}), 200
     except opencli_monitor_service.OpenCLIAdminError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
