@@ -19,6 +19,15 @@ class _Response:
         return False
 
 
+class _RedirectResponse(_Response):
+    def __init__(self, final_url):
+        super().__init__({})
+        self.final_url = final_url
+
+    def geturl(self):
+        return self.final_url
+
+
 class OpenCLIAdminServiceTests(unittest.TestCase):
     def test_parses_stable_sec_uid_from_profile_url(self):
         sec_uid, profile_url = service.parse_douyin_sec_uid(
@@ -30,6 +39,30 @@ class OpenCLIAdminServiceTests(unittest.TestCase):
     def test_rejects_profile_without_stable_id(self):
         with self.assertRaisesRegex(ValueError, "sec_uid"):
             service.parse_douyin_sec_uid("https://www.douyin.com/")
+
+    @patch("backend_app.modules.opencli_monitor.service.urlopen")
+    def test_parses_douyin_short_share_profile_link(self, mocked_urlopen):
+        mocked_urlopen.return_value = _RedirectResponse(
+            "https://www.iesdouyin.com/share/user?sec_uid=MS4wLjABAAAA-share"
+        )
+        sec_uid, profile_url = service.parse_douyin_sec_uid(
+            "https://v.douyin.com/iLXkLwl4kyY/"
+        )
+        self.assertEqual("MS4wLjABAAAA-share", sec_uid)
+        self.assertEqual(
+            "https://www.douyin.com/user/MS4wLjABAAAA-share", profile_url
+        )
+
+    @patch("backend_app.modules.opencli_monitor.service.urlopen")
+    def test_parses_short_link_embedded_in_copied_share_text(self, mocked_urlopen):
+        mocked_urlopen.return_value = _RedirectResponse(
+            "https://www.iesdouyin.com/share/user?sec_uid=MS4wLjABAAAA-share-text"
+        )
+        sec_uid, _ = service.parse_douyin_sec_uid(
+            "长按复制此条消息，打开抖音搜索，查看TA的更多作品。 "
+            "https://v.douyin.com/iLXkLwl4kyY/ 3@4.com :2pm"
+        )
+        self.assertEqual("MS4wLjABAAAA-share-text", sec_uid)
 
     def test_parses_generic_platform_profile_reference(self):
         external_id, profile_url = service.parse_account_reference(

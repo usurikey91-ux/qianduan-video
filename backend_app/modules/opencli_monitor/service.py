@@ -5,7 +5,7 @@ import os
 import re
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -40,6 +40,10 @@ def parse_douyin_sec_uid(value: str) -> tuple[str, str]:
     text = (value or "").strip()
     if not text:
         raise ValueError("请粘贴抖音主页链接或 sec_uid")
+    # 兼容抖音分享卡片复制出来的整段提示语，从文本中提取其中的链接。
+    embedded_url = re.search(r"https?://[^\s<>\]\[\"']+", text)
+    if embedded_url:
+        text = embedded_url.group(0).rstrip(".,!?，。！？")
     if "://" not in text and "/" not in text:
         return text, f"https://www.douyin.com/user/{text}"
     if "://" not in text:
@@ -47,10 +51,26 @@ def parse_douyin_sec_uid(value: str) -> tuple[str, str]:
     parsed = urlparse(text)
     if not parsed.hostname or not parsed.hostname.lower().endswith("douyin.com"):
         raise ValueError("请输入 douyin.com 的主页链接")
+
+    # 抖音分享卡片常用 v.douyin.com 短链，打开后会跳转到
+    # /share/user?...&sec_uid=...。先跟随一次跳转，再从最终 URL 提取稳定 ID。
+    query_sec_uid = parse_qs(parsed.query).get("sec_uid", [""])[0].strip()
     match = re.search(r"/user/([^/?#]+)", parsed.path)
-    if not match:
-        raise ValueError("主页链接中缺少稳定账号 ID（sec_uid）")
-    sec_uid = match.group(1).strip()
+    if not match and not query_sec_uid and parsed.hostname.lower().startswith("v."):
+        try:
+            request = Request(
+                text,
+                headers={"User-Agent": "Mozilla/5.0 (Sunbird benchmark monitor)"},
+            )
+            with urlopen(request, timeout=10) as response:
+                redirected = response.geturl()
+            redirected_parsed = urlparse(redirected)
+            query_sec_uid = parse_qs(redirected_parsed.query).get("sec_uid", [""])[0].strip()
+            match = re.search(r"/user/([^/?#]+)", redirected_parsed.path)
+        except Exception as exc:
+            raise ValueError("无法从抖音分享链接识别稳定账号 ID") from exc
+
+    sec_uid = query_sec_uid or (match.group(1).strip() if match else "")
     if not sec_uid:
         raise ValueError("主页链接中缺少稳定账号 ID（sec_uid）")
     return sec_uid, f"https://www.douyin.com/user/{sec_uid}"
