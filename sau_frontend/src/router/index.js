@@ -1,7 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import Dashboard from '../views/Dashboard.vue'
 import AccountManagement from '../views/AccountManagement.vue'
-import MaterialManagement from '../views/MaterialManagement.vue'
 import PublishCenter from '../views/PublishCenter.vue'
 import About from '../views/About.vue'
 import DataView from '../views/DataView.vue'
@@ -10,7 +9,6 @@ import IdeaRadar from '../views/IdeaRadar.vue'
 import OwnContentReview from '../views/OwnContentReview.vue'
 import Login from '../views/Login.vue'
 import AgentModels from '../views/AgentModels.vue'
-import KouboStudio from '../views/KouboStudio.vue'
 import VideoInspector from '../views/VideoInspector.vue'
 
 const routes = [
@@ -33,7 +31,7 @@ const routes = [
   {
     path: '/material-management',
     name: 'MaterialManagement',
-    component: MaterialManagement
+    redirect: '/publish-center'
   },
   {
     path: '/publish-center',
@@ -68,7 +66,7 @@ const routes = [
   {
     path: '/koubo-studio',
     name: 'KouboStudio',
-    component: KouboStudio
+    redirect: '/publish-center'
   },
   {
     path: '/video-inspector',

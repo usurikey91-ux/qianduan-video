@@ -8,7 +8,7 @@
 - `POST /integrations/video-jiexi/inspect`：解析公开分享链接。
 - `POST /integrations/video-jiexi/download`：创建视频、音频或封面下载任务。
 - `GET /integrations/video-jiexi/tasks/{id}`：读取下载进度。
-- `POST /integrations/video-jiexi/import`：把已完成的文件复制到太阳鸟 `videoFile` 素材库并登记数据库。
+- `POST /integrations/video-jiexi/import`：把已完成的文件复制到太阳鸟的临时发布文件区并登记数据库，随后可一键送入发布中心。
 
 解析服务是可选提供方，默认不连接任何地址。部署时通过环境变量 `VIDEO_JIEXI_BASE_URL` 或运行时设置 `videoJiexiBaseUrl` 指定服务地址。远程服务建议同时配置 `VIDEO_JIEXI_API_TOKEN`（或 `videoJiexiApiToken`），太阳鸟会通过 `Authorization: Bearer …` 调用；未配置 Token 时仅适合同机受限部署。
 
@@ -18,9 +18,9 @@
 
 ## social-auto-upload
 
-太阳鸟本身已经保留并调用同源的 `uploader` 与发布记录模块，发布中心不再额外启动第二个 5409 服务，也不把 Cookie 发送到外部服务。这样可以避免两个后端争抢同一个端口，并保证发布记录、素材和账号状态都留在太阳鸟数据库中。
+太阳鸟本身已经内置并调用同源的 `uploader` 与发布记录模块，发布中心不再额外启动第二个 5409 服务，也不把 Cookie 发送到外部服务。这样可以避免两个后端争抢同一个端口，并保证发布记录和账号状态都留在太阳鸟数据库中。原 `social-auto-upload` 的发布能力现在以 `sunbird-social-auto-upload` 内置适配器运行。
 
-原 `social-auto-upload` 项目继续作为参考实现和可替换源，不作为太阳鸟运行时依赖。
+原 `social-auto-upload` 文件夹可以保留作为升级和对照备份，但不再是太阳鸟运行时依赖；完成真实发布验收前不要删除它。
 
 ## 公开部署配置
 

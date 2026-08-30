@@ -1,7 +1,7 @@
 <template>
   <div class="agent-models-page">
     <header class="page-header">
-      <div><p class="eyebrow">Hermes Gateway</p><h1>Agent 模型</h1><p>配置连接并指定爆款拆解使用的模型。</p></div>
+      <div><p class="eyebrow">Workspace Settings</p><h1>设置</h1><p>配置采集服务、视频解析服务和发布引擎；AI 模型属于可选能力。</p></div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </header>
 
@@ -34,6 +34,10 @@
         <el-form-item label="共享目录回退（可选）"><el-input v-model="integrationForm.videoJiexiDownloadDir" placeholder="仅在服务没有文件接口时填写" /></el-form-item>
       </el-form>
       <div class="section-actions"><el-button type="primary" :loading="savingIntegrations" @click="saveIntegrations">保存集成配置</el-button><el-button :loading="testingIntegration" @click="testIntegration">检查视频解析服务</el-button></div>
+      <div v-if="integrationForm.publisher" class="embedded-publisher-note">
+        <el-tag type="success" effect="plain">发布引擎已内置</el-tag>
+        <span>social-auto-upload 已作为太阳鸟运行时适配器集成，支持 {{ integrationForm.publisher.platforms?.join('、') }}；无需再启动第二套发布后台。</span>
+      </div>
     </section>
 
     <section class="settings-section">
@@ -105,7 +109,7 @@ const taskModels = reactive({ viralAnalysis: '' })
 const connectionStatus = reactive({ type: 'info', label: '未测试' })
 const integrationStatus = reactive({ type: 'info', label: '未检查' })
 const hermesForm = reactive({ gatewayUrl: '', apiKey: '', apiKeyConfigured: false, timeout: 300 })
-const integrationForm = reactive({ opencliAdminBaseUrl: '', opencliAdminApiToken: '', opencliAdminApiTokenConfigured: false, videoJiexiBaseUrl: '', videoJiexiApiToken: '', videoJiexiApiTokenConfigured: false, videoJiexiDownloadDir: '' })
+const integrationForm = reactive({ opencliAdminBaseUrl: '', opencliAdminApiToken: '', opencliAdminApiTokenConfigured: false, videoJiexiBaseUrl: '', videoJiexiApiToken: '', videoJiexiApiTokenConfigured: false, videoJiexiDownloadDir: '', publisher: null })
 const emptyEditor = () => ({ name: '', provider: '', model: '', reasoningEffort: '', serviceTier: '', enabled: true })
 const editor = reactive(emptyEditor())
 const enabledModels = computed(() => models.value.filter((item) => item.enabled))
@@ -187,6 +191,7 @@ h1 { margin: 0; font-size: 30px; letter-spacing: 0; } h2 { margin: 0; font-size:
 .settings-section { padding: 24px 0; border-top: 1px solid #e1e4e8; } .section-heading { margin-bottom: 20px; }
 .connection-form { display: grid; grid-template-columns: 2fr 1.5fr 160px; gap: 18px; } .connection-form :deep(.el-form-item) { margin-bottom: 4px; }
 .section-actions { display: flex; gap: 10px; margin-top: 18px; }
+.embedded-publisher-note { display:flex; align-items:center; gap:10px; margin-top:16px; color:#5f6773; font-size:13px; line-height:1.5; }
 .task-row > div { display: flex; flex-direction: column; gap: 5px; min-width: 220px; } .task-row span { color: #737985; font-size: 13px; }
 .task-row .el-select { width: min(460px, 100%); margin-left: auto; } .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 800px) { .connection-form, .form-grid { grid-template-columns: 1fr; } .page-header, .section-heading, .task-row { align-items: stretch; flex-direction: column; } .task-row .el-select { width: 100%; margin-left: 0; } .section-actions { flex-wrap: wrap; } }

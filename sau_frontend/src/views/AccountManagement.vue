@@ -1,7 +1,8 @@
 <template>
   <div class="account-management">
     <div class="page-header">
-      <h1>账号管理</h1>
+      <h1>发布账号</h1>
+      <p>管理你自己的发布账号、登录状态和平台授权。对标账号请在“对标内容库”中单独添加。</p>
     </div>
     
     <div class="account-tabs">

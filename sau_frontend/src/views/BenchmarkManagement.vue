@@ -1,7 +1,7 @@
 <template>
   <div class="benchmark-management">
     <div class="page-header">
-      <h1>对标账号管理</h1>
+      <h1>对标内容库</h1>
     </div>
 
     <el-card shadow="never" class="monitor-card">

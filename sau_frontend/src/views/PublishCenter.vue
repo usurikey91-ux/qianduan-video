@@ -99,7 +99,7 @@
               </el-button>
               <el-button type="success" @click="selectMaterialLibrary" class="option-btn">
                 <el-icon><Folder /></el-icon>
-                素材库
+                已有文件
               </el-button>
             </div>
           </el-dialog>
@@ -190,7 +190,7 @@
           <!-- 素材库选择弹窗 -->
           <el-dialog
             v-model="materialLibraryVisible"
-            title="选择素材"
+            title="选择已有文件"
             width="800px"
             class="material-library-dialog"
           >
@@ -451,7 +451,6 @@ import { ElMessage } from 'element-plus'
 import { useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { materialApi } from '@/api/material'
-import { kouboApi } from '@/api/koubo'
 
 // API base URL
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
@@ -513,40 +512,37 @@ const tabs = reactive([
     videosPerDay: 1, // 每天发布视频数量
     dailyTimes: ['10:00'], // 每天发布时间点列表
     startDays: 0, // 从今天开始计算的发布天数，0表示明天，1表示后天
-    publishStatus: null, // 发布状态，包含message和type
-    kouboProjectId: null
+    publishStatus: null // 发布状态，包含message和type
   }
 ])
 
-const loadKouboPublishDraft = () => {
-  const raw = localStorage.getItem('koubo_publish_draft')
+const loadParserPrefill = () => {
+  const raw = localStorage.getItem('sunbird_publish_prefill')
   if (!raw) return
   try {
     const draft = JSON.parse(raw)
+    if (!draft?.path) return
     const tab = tabs[0]
-    tab.label = '口播发布'
-    tab.title = draft.title || ''
-    tab.selectedTopics = Array.isArray(draft.tags) ? draft.tags : []
+    tab.label = '解析待发布'
     tab.fileList = [{
-      name: draft.video.original_name || 'final.mp4',
-      path: draft.video.absolute_path,
-      url: `${apiBaseUrl}${draft.video.content_url}?token=${encodeURIComponent(localStorage.getItem('koubo_admin_token') || '')}`,
-      size: draft.video.size || 0
+      name: draft.name || 'download.mp4',
+      path: draft.path,
+      url: draft.url || `${apiBaseUrl}/getFile?filename=${encodeURIComponent(draft.path)}`,
+      size: Number(draft.size || 0),
+      type: 'video/mp4'
     }]
     tab.displayFileList = [...tab.fileList]
-    tab.cover = {
-      path: draft.cover.absolute_path,
-      url: `${apiBaseUrl}${draft.cover.content_url}?token=${encodeURIComponent(localStorage.getItem('koubo_admin_token') || '')}`
-    }
-    tab.kouboProjectId = draft.project_id
-    localStorage.removeItem('koubo_publish_draft')
-    ElMessage.success('口播成片和发布文案已载入，请选择账号和平台')
+    localStorage.removeItem('sunbird_publish_prefill')
+    ElMessage.success('解析文件已载入发布中心，请选择账号和平台')
   } catch (error) {
-    console.error('Failed to load koubo publish draft', error)
+    console.error('Failed to load parser prefill', error)
+    localStorage.removeItem('sunbird_publish_prefill')
   }
 }
 
-onMounted(loadKouboPublishDraft)
+onMounted(() => {
+  loadParserPrefill()
+})
 
 watch(
   () => tabs.map(tab => tab.selectedPlatform),
@@ -815,12 +811,6 @@ const confirmPublish = async (tab) => {
     .then(response => response.json())
     .then(data => {
       if (data.code === 200) {
-        if (tab.kouboProjectId) {
-          kouboApi.markPublished(tab.kouboProjectId, {
-            platform: tab.selectedPlatform,
-            status: 'success'
-          }).catch(error => console.error('Failed to update koubo project status', error))
-        }
         tab.publishStatus = {
           message: '发布成功',
           type: 'success'
@@ -834,13 +824,6 @@ const confirmPublish = async (tab) => {
         tab.scheduleEnabled = false
         resolve()
       } else {
-        if (tab.kouboProjectId) {
-          kouboApi.markPublished(tab.kouboProjectId, {
-            platform: tab.selectedPlatform,
-            status: 'failed',
-            error_message: data.msg || '发布失败'
-          }).catch(error => console.error('Failed to update koubo project status', error))
-        }
         tab.publishStatus = {
           message: `发布失败：${data.msg || '发布失败'}`,
           type: 'error'

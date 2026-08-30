@@ -32,14 +32,6 @@
           <el-icon><TrendCharts /></el-icon>
           <template #title>作品复盘</template>
         </el-menu-item>
-        <el-menu-item index="/material-management">
-          <el-icon><Picture /></el-icon>
-          <template #title>素材资产</template>
-        </el-menu-item>
-        <el-menu-item index="/koubo-studio">
-          <el-icon><VideoCamera /></el-icon>
-          <template #title>口播工作台</template>
-        </el-menu-item>
         <el-menu-item index="/video-inspector">
           <el-icon><VideoPlay /></el-icon>
           <template #title>视频解析</template>
@@ -50,15 +42,11 @@
         </el-menu-item>
         <el-menu-item index="/account-management">
           <el-icon><User /></el-icon>
-          <template #title>账号管理</template>
-        </el-menu-item>
-        <el-menu-item index="/data">
-          <el-icon><PieChart /></el-icon>
-          <template #title>数据明细</template>
+          <template #title>发布账号</template>
         </el-menu-item>
         <el-menu-item index="/agent-models">
           <el-icon><Setting /></el-icon>
-          <template #title>Agent 模型</template>
+          <template #title>设置</template>
         </el-menu-item>
       </el-menu>
 
@@ -100,8 +88,6 @@ import {
   DataAnalysis,
   Fold,
   HomeFilled,
-  Picture,
-  PieChart,
   Plus,
   Refresh,
   Setting,
@@ -109,7 +95,6 @@ import {
   TrendCharts,
   Upload,
   User,
-  VideoCamera,
   VideoPlay
 } from '@element-plus/icons-vue'
 
@@ -123,13 +108,11 @@ const pageMeta = {
   '/benchmark-management': { kicker: 'Benchmark', title: '对标内容库' },
   '/idea-radar': { kicker: 'Insight', title: '爆款拆解' },
   '/own-content-review': { kicker: 'Review', title: '作品复盘' },
-  '/material-management': { kicker: 'Assets', title: '素材资产' },
-  '/koubo-studio': { kicker: 'Koubo Studio', title: '口播生产工作台' },
   '/video-inspector': { kicker: 'Video Jiexi', title: '视频解析' },
   '/publish-center': { kicker: 'Publish', title: '发布中心' },
-  '/account-management': { kicker: 'Accounts', title: '账号管理' },
+  '/account-management': { kicker: 'Publishing Accounts', title: '发布账号' },
   '/data': { kicker: 'Data', title: '数据明细' },
-  '/agent-models': { kicker: 'Settings', title: 'Agent 模型' }
+  '/agent-models': { kicker: 'Settings', title: '设置' }
 }
 
 const activeMenu = computed(() => route.path)

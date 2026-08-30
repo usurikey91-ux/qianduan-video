@@ -301,6 +301,12 @@ def hermes_settings_api():
 @app.route("/settings/integrations", methods=["GET", "PUT"])
 def integrations_settings_api():
     settings = load_runtime_settings()
+    publisher = {
+        "provider": "sunbird-social-auto-upload",
+        "mode": "embedded",
+        "available": True,
+        "platforms": ["抖音", "快手", "视频号", "小红书"],
+    }
     if request.method == "GET":
         return jsonify({"code": 200, "message": None, "data": {
             "opencliAdminBaseUrl": opencli_monitor_service.get_base_url(settings),
@@ -308,6 +314,7 @@ def integrations_settings_api():
             "videoJiexiBaseUrl": video_jiexi_client.base_url(settings),
             "videoJiexiApiTokenConfigured": bool(video_jiexi_client.api_token(settings)),
             "videoJiexiDownloadDir": str(video_jiexi_client.download_root(settings) or ""),
+            "publisher": publisher,
         }})
 
     payload = request.get_json(silent=True) or {}
@@ -339,7 +346,22 @@ def integrations_settings_api():
         "videoJiexiBaseUrl": video_jiexi_client.base_url(settings),
         "videoJiexiApiTokenConfigured": bool(video_jiexi_client.api_token(settings)),
         "videoJiexiDownloadDir": str(video_jiexi_client.download_root(settings) or ""),
+        "publisher": publisher,
     }})
+
+
+@app.route("/integrations/publisher/status", methods=["GET"])
+def publisher_status_api():
+    """Expose the embedded social-auto-upload publishing adapter."""
+    return jsonify({
+        "code": 200,
+        "data": {
+            "provider": "sunbird-social-auto-upload",
+            "mode": "embedded",
+            "available": True,
+            "platforms": ["抖音", "快手", "视频号", "小红书"],
+        },
+    })
 
 
 @app.route("/settings/hermes/test", methods=["POST"])
@@ -1922,7 +1944,7 @@ def video_jiexi_import():
         target.write_bytes(raw_content)
         filesize = round(float(target.stat().st_size) / (1024 * 1024), 2)
         material_repository.add_file_record(get_db_path(), original_name, filesize, target_name)
-        return jsonify({"code": 200, "msg": "已导入太阳鸟素材库", "data": {"filename": original_name, "filepath": target_name, "filesize": filesize}}), 200
+        return jsonify({"code": 200, "msg": "文件已准备到发布中心", "data": {"filename": original_name, "filepath": target_name, "filesize": filesize}}), 200
     except video_jiexi_client.VideoJiexiError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
     except OSError as exc:

@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1>视频解析</h1>
-        <p>调用已配置的视频解析服务处理公开分享链接，下载后直接进入太阳鸟素材库。</p>
+        <p>调用已配置的视频解析服务处理公开分享链接，下载后直接交给发布中心。</p>
       </div>
       <el-tag :type="serviceAvailable ? 'success' : 'warning'" effect="plain">
         {{ serviceAvailable ? '解析服务在线' : '解析服务未连接' }}
@@ -34,7 +34,7 @@
         <el-select v-if="info.formats?.length" v-model="formatId" placeholder="选择画质" style="min-width: 240px">
           <el-option v-for="format in info.formats" :key="format.id" :label="format.label || format.id" :value="String(format.id)" />
         </el-select>
-        <el-button type="primary" :loading="downloading" @click="download">下载视频并导入素材库</el-button>
+        <el-button type="primary" :loading="downloading" @click="download">下载并准备发布</el-button>
       </div>
       <el-empty v-else description="当前版本先处理单条视频；图文或混合轮播取决于已配置的解析服务" :image-size="60" />
     </el-card>
@@ -43,15 +43,18 @@
       <template #header><div class="card-header"><span>下载任务</span><el-tag :type="task.state === 'completed' ? 'success' : task.state === 'error' ? 'danger' : 'warning'">{{ taskStateText }}</el-tag></div></template>
       <el-progress :percentage="Math.round(Number(task.progress) || 0)" :status="task.state === 'error' ? 'exception' : task.state === 'completed' ? 'success' : undefined" />
       <div class="task-message">{{ task.error || task.filename || '正在下载…' }}</div>
-      <el-button v-if="task.state === 'completed' && !imported" type="success" @click="importMaterial">导入太阳鸟素材库</el-button>
-      <el-tag v-if="imported" type="success">已导入素材库</el-tag>
+      <div class="task-actions">
+        <el-button v-if="task.state === 'completed' && !imported" type="success" @click="importMaterial">准备到发布中心</el-button>
+        <el-button v-if="imported" type="primary" @click="goPublish">去发布中心</el-button>
+        <el-tag v-if="imported" type="success">文件已准备</el-tag>
+      </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { videoJiexiApi } from '@/api/videoJiexi'
 
@@ -64,6 +67,7 @@ const inspecting = ref(false)
 const downloading = ref(false)
 const imported = ref(false)
 const route = useRoute()
+const router = useRouter()
 const serviceAvailable = ref(false)
 const serviceBaseUrl = ref('')
 let pollTimer
@@ -118,8 +122,19 @@ function startPolling() {
 
 async function importMaterial() {
   const response = await videoJiexiApi.importMaterial(taskId.value)
+  const importedFile = response.data || {}
+  localStorage.setItem('sunbird_publish_prefill', JSON.stringify({
+    name: importedFile.filename || task.value?.filename || 'download.mp4',
+    path: importedFile.filepath || '',
+    size: Number(importedFile.filesize || 0) * 1024 * 1024,
+    url: `${import.meta.env.VITE_API_BASE_URL || ''}/getFile?filename=${encodeURIComponent(importedFile.filepath || '')}`
+  }))
   imported.value = true
-  ElMessage.success(response.msg || '已导入素材库')
+  ElMessage.success(response.msg || '文件已准备，可前往发布中心')
+}
+
+function goPublish() {
+  router.push('/publish-center')
 }
 
 onMounted(() => {
@@ -148,5 +163,6 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .cover { width:180px; height:120px; border-radius:10px; object-fit:cover; background:#f3f4f6; }
 .format-row { display:flex; gap:12px; align-items:center; margin-top:20px; }
 .task-message { margin:12px 0; color:#6b7280; }
+.task-actions { display:flex; align-items:center; gap:10px; }
 @media (max-width: 700px) { .inspect-row,.format-row { flex-direction:column; align-items:stretch; } .result-grid { grid-template-columns:1fr; } }
 </style>
