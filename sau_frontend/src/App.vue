@@ -1,6 +1,5 @@
 <template>
-  <router-view v-if="isLoginPage" />
-  <el-container v-else class="app-shell">
+  <el-container class="app-shell">
     <el-aside :width="isCollapse ? '72px' : '248px'" class="app-sidebar">
       <div class="brand">
         <div class="brand-mark">拆</div>
@@ -68,7 +67,7 @@
         <div class="topbar-actions">
           <el-button text :icon="Refresh">同步数据</el-button>
           <el-button type="primary" :icon="Plus">新建复盘</el-button>
-          <el-button text :icon="SwitchButton" @click="logout">退出</el-button>
+          <el-tag type="info" effect="plain">本机模式</el-tag>
         </div>
       </el-header>
 
@@ -81,8 +80,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useUserStore } from '@/stores'
+import { useRoute } from 'vue-router'
 import {
   Aim,
   DataAnalysis,
@@ -91,7 +89,6 @@ import {
   Plus,
   Refresh,
   Setting,
-  SwitchButton,
   TrendCharts,
   Upload,
   User,
@@ -99,8 +96,6 @@ import {
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
-const router = useRouter()
-const userStore = useUserStore()
 const isCollapse = ref(false)
 
 const pageMeta = {
@@ -117,16 +112,11 @@ const pageMeta = {
 
 const activeMenu = computed(() => route.path)
 const routeMeta = computed(() => pageMeta[route.path] || pageMeta['/'])
-const isLoginPage = computed(() => route.path === '/login')
 
 const toggleSidebar = () => {
   isCollapse.value = !isCollapse.value
 }
 
-const logout = () => {
-  userStore.logout()
-  router.replace('/login')
-}
 </script>
 
 <style lang="scss" scoped>

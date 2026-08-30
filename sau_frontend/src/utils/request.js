@@ -1,6 +1,5 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import router from '@/router'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '',
@@ -37,13 +36,7 @@ request.interceptors.response.use(
       const { status, data } = error.response
       if (status === 401) {
         localStorage.removeItem('token')
-        ElMessage.error(data?.message || '请重新登录')
-        if (router.currentRoute.value.path !== '/login') {
-          router.push({
-            path: '/login',
-            query: { redirect: router.currentRoute.value.fullPath }
-          })
-        }
+        ElMessage.error(data?.message || '本机服务拒绝了这次请求')
       } else {
         ElMessage.error(data?.message || data?.msg || '请求失败')
       }

@@ -129,7 +129,7 @@ pwsh -File .\scripts\setup-local.ps1
     ```bash
     python sau_backend.py
     ```
-    后端项目默认在 `http://localhost:5409` 启动。部署到服务器时可通过 `SAU_BACKEND_HOST` 和 `SAU_BACKEND_PORT` 配置监听地址与端口；生产环境建议放在反向代理后。
+    后端项目默认在 `http://localhost:5409` 启动。工作台默认使用本机个人模式，不要求管理员账号登录；部署到服务器时请放在反向代理或其他访问控制后，并可通过 `SAU_AUTH_REQUIRED=1` 开启后端鉴权。还可通过 `SAU_BACKEND_HOST` 和 `SAU_BACKEND_PORT` 配置监听地址与端口。
 
 7.  **启动前端项目**:
     ```bash

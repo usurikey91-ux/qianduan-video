@@ -7,7 +7,6 @@ import DataView from '../views/DataView.vue'
 import BenchmarkManagement from '../views/BenchmarkManagement.vue'
 import IdeaRadar from '../views/IdeaRadar.vue'
 import OwnContentReview from '../views/OwnContentReview.vue'
-import Login from '../views/Login.vue'
 import AgentModels from '../views/AgentModels.vue'
 import VideoInspector from '../views/VideoInspector.vue'
 
@@ -15,8 +14,7 @@ const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: Login,
-    meta: { public: true }
+    redirect: '/'
   },
   {
     path: '/',
@@ -83,19 +81,6 @@ const routes = [
 const router = createRouter({
   history: createWebHashHistory(),
   routes
-})
-
-router.beforeEach((to) => {
-  const token = localStorage.getItem('token')
-  if (to.meta.public && token && to.path === '/login') {
-    return '/'
-  }
-  if (!to.meta.public && !token) {
-    return {
-      path: '/login',
-      query: { redirect: to.fullPath }
-    }
-  }
 })
 
 export default router

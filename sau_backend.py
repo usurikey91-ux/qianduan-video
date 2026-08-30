@@ -87,6 +87,9 @@ idea_radar_job_registry = IdeaRadarJobRegistry()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SAU_SECRET_KEY") or secrets.token_hex(32)
 AUTH_TOKEN_MAX_AGE = int(os.environ.get("SAU_AUTH_TOKEN_MAX_AGE", str(7 * 24 * 60 * 60)))
+AUTH_REQUIRED = os.environ.get("SAU_AUTH_REQUIRED", "0").strip().lower() in {
+    "1", "true", "yes", "on"
+}
 token_serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="sau-local-auth")
 
 for stream in (sys.stdout, sys.stderr):
@@ -194,6 +197,13 @@ def parse_auth_token():
 def auth_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        if not AUTH_REQUIRED:
+            request.current_admin = {
+                "id": "local-user",
+                "username": "local",
+                "display_name": "本机用户",
+            }
+            return fn(*args, **kwargs)
         admin = parse_auth_token()
         if not admin:
             return jsonify({"code": 401, "message": "未登录或登录已过期", "data": None}), 401
@@ -205,6 +215,8 @@ def auth_required(fn):
 @app.before_request
 def require_local_login():
     if request.method == "OPTIONS":
+        return None
+    if not AUTH_REQUIRED:
         return None
     public_paths = {
         "/",
@@ -232,6 +244,7 @@ def runtime_identity():
         "data": {
             "service": "content-workbench-backend",
             "packaged": os.environ.get("SAU_PACKAGED") == "1",
+            "authRequired": AUTH_REQUIRED,
         },
     })
     response.headers["X-SAU-Instance-Token"] = os.environ.get("SAU_INSTANCE_TOKEN", "")
