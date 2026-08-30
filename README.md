@@ -1,8 +1,8 @@
-# 太阳鸟自媒体自动化运营系统
+# 自媒体前端内容拆解
 
-这是太阳鸟基于开源项目 `social-auto-upload` 做的二次开发版本，目标是把多平台内容发布、发布记录、对标账号分析和视频解析整合到一个可复用的内容工作台里。
+这是一个面向内容创作者的可复用工作台：先采集对标账号的公开作品和互动数据，再筛选出相对账号日常表现更好的作品，进入视频解析、内容拆解和发布流程。
 
-原项目提供了 `抖音`、`Bilibili`、`小红书`、`快手`、`视频号`、`百家号` 以及 `TikTok` 等平台的视频上传、定时发布能力。本版本在此基础上继续增强了后台管理、抖音对标账号同步、作品数据沉淀、作品内容拆解、发布记录追踪和视频处理工作流能力。
+项目由三个可替换部分组成：对标采集与热度筛选、视频解析服务、内置多平台发布引擎。未配置外部采集或解析服务时，工作台仍可启动并使用发布账号和发布中心。
 
 这个项目适合内容创作者、自媒体运营者和个人团队使用。它不是单纯的上传工具，而是一个可以持续沉淀账号、对标作品和发布结果的可部署运营工作台。
 
@@ -11,7 +11,7 @@
 ## 目录
 
 - [💡 功能特性](#💡功能特性)
-- [🌞 太阳鸟二次开发能力](#🌞太阳鸟二次开发能力)
+- [🧩 核心能力](#🧩核心能力)
 - [🚀 支持的平台](#🚀支持的平台)
 - [💾 安装指南](#💾安装指南)
 - [🏁 快速开始](#🏁快速开始)
@@ -22,9 +22,9 @@
 - [📜 许可证](#📜许可证)
 - [⭐ Star History](#⭐Star-History)
 
-## 🌞太阳鸟二次开发能力
+## 🧩核心能力
 
-本版本基于原 `social-auto-upload` 项目继续开发，重点增强了以下能力：
+当前工作台包含以下能力：
 
 -   **对标账号管理**：手动添加任意已接入平台的对标账号；账号可选、可添加多个，采集服务负责同步账号和作品数据。
 -   **最新作品同步**：点击同步时，自动扫描并补充最多 20 条本地未同步作品；已有作品会更新标题、封面、点赞数和原始数据。
@@ -81,15 +81,15 @@
 
 1.  **克隆项目**:
     ```bash
-    git clone https://github.com/niupTang/douyin.git
-    cd douyin
+    git clone https://github.com/usurikey91-ux/zimeiti-qianduan-neirong-chaijie.git
+    cd zimeiti-qianduan-neirong-chaijie
     ```
 
 2.  **安装依赖**:
     建议在虚拟环境中安装依赖。
     ```bash
-    conda create -n social-auto-upload python=3.10
-    conda activate social-auto-upload
+    conda create -n content-workbench python=3.10
+    conda activate content-workbench
     # 挂载清华镜像 or 命令行代理
     pip install -r requirements.txt
     ```
@@ -147,7 +147,7 @@ pwsh -File .\scripts\setup-local.ps1
 
 ### OpenCLI Admin 辅助监控
 
-太阳鸟的“对标内容库”可通过可选的 OpenCLI Admin 服务自动发现已接入平台的对标账号新作品，并读取 `hot`/`very_hot` 待分析队列。部署时通过环境变量 `OPENCLI_ADMIN_BASE_URL`，或在 `settings.json` 中配置 `opencliAdminBaseUrl` 指定地址。该服务只负责采集和热度筛选，太阳鸟仍是主界面和内容生产系统。平台是否可采集由采集服务的适配器决定，主系统不绑定某一个平台。
+“对标内容库”可通过可选的 OpenCLI Admin 服务自动发现对标账号新作品，并读取 `hot`/`very_hot` 待分析队列。部署时通过环境变量 `OPENCLI_ADMIN_BASE_URL`，或在 `settings.json` 中配置 `opencliAdminBaseUrl` 指定地址。平台是否可采集由采集服务的适配器决定，主系统不绑定某一个平台。
 
 1.  **准备 Cookie**: 
     大多数平台需要登录后的 Cookie 信息才能进行操作。请参照 examples 目录下各 `get_xxx_cookie.py` 脚本（例如 get_douyin_cookie.py, get_ks_cookie.py）的说明，运行脚本以生成并保存 Cookie 文件（通常在 `cookies/[PLATFORM]_uploader/account.json`）。
@@ -168,44 +168,17 @@ pwsh -File .\scripts\setup-local.ps1
     python examples/upload_video_to_douyin.py
     ```
 
-## 🐇项目背景
+## 🐇项目说明
 
-本仓库是太阳鸟基于 `social-auto-upload` 做的二次开发版本。原项目最初用于自动化管理社交媒体视频发布；现在发布账号、发布引擎和发布记录已经收敛到太阳鸟工作台，原项目目录不再是运行时依赖。视频解析作为可替换服务接入，默认不绑定任何个人电脑路径。
+发布账号、发布引擎和发布记录已经收敛在本工作台内；视频解析和对标采集通过 HTTP 能力提供方接入，不绑定个人电脑路径或固定平台。
 
-如果您需要搭建自己的内容运营系统，可以基于这个版本继续扩展，比如接入更多平台、增加评论分析、自动生成选题、自动剪辑视频、自动生成封面和自动发布。
+后续可以在不改变主界面的前提下增加平台适配器、评论分析或其他内容工具。
 
 
 
 ## 🐾交流与支持
 
-如果您对 AI 自媒体、内容自动化、对标账号拆解、短视频工作流等方向感兴趣，可以关注太阳鸟公众号，或添加个人微信交流。
-
-### Creator
-
-<table>
-    <td align="center">
-        <a href="https://github.com/niupTang/douyin">
-            <img src="media/mp.jpg" width="200px" alt="太阳鸟公众号"/>
-            <br />
-            <sub><b>太阳鸟公众号</b></sub>
-        </a>
-        <br />
-        <a href="https://github.com/niupTang/douyin" title="Code">💻</a>
-        <br />
-        关注公众号，获取 AI 自媒体自动化运营案例
-    </td>
-    <td align="center">
-        <a href="https://github.com/niupTang/douyin">
-            <img src="media/QR.png" width="200px" alt="太阳鸟个人微信"/>
-            <br />
-            <sub><b>太阳鸟个人微信</b></sub>
-        </a>
-        <br />
-        <a href="https://github.com/niupTang/douyin" title="Project">📖</a>
-        <br />
-        添加微信，交流 AI 内容生产和自动化发布
-    </td>
-</table>
+欢迎通过 GitHub Issues 反馈安装、平台适配和内容流程问题。
 
 
 ## 📜许可证
@@ -215,5 +188,3 @@ pwsh -File .\scripts\setup-local.ps1
 您可以在非商业目的下学习、研究、修改和分发本项目代码，但不得将本项目或其衍生作品用于任何商业用途。任何商业化使用、商业部署、商业服务、销售、再授权或用于营利性业务场景，均需事先获得项目作者的书面商业授权并支付相应授权费用。
 
 未经授权的商业化使用将被视为侵权行为，项目作者保留追究法律责任、要求停止侵权、赔偿损失并提起诉讼的权利。
-
-https://star-history.com/#dreammis/social-auto-upload&Date)
