@@ -25,7 +25,8 @@ request.interceptors.request.use(
 request.interceptors.response.use(
   (response) => {
     const { data } = response
-    if (data.code === 200 || data.success) {
+    const applicationCode = Number(data.code)
+    if ((applicationCode >= 200 && applicationCode < 300) || data.success) {
       return data
     }
     ElMessage.error(data.message || data.msg || '请求失败')

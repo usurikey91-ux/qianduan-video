@@ -3,10 +3,10 @@
   <el-container v-else class="app-shell">
     <el-aside :width="isCollapse ? '72px' : '248px'" class="app-sidebar">
       <div class="brand">
-        <div class="brand-mark">S</div>
+        <div class="brand-mark">拆</div>
         <div v-show="!isCollapse" class="brand-copy">
-          <strong>Sunbird OS</strong>
-          <span>自媒体内容拆解工作台</span>
+          <strong>自媒体内容拆解</strong>
+          <span>对标爆款分析与发布工作台</span>
         </div>
       </div>
 

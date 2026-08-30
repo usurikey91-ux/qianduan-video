@@ -7,7 +7,7 @@ export const ownContentApi = {
     return http.upload('/own/douyin/import/preview', formData)
   },
 
-  importDouyinWorks: (file, accountName = '太阳鸟') => {
+  importDouyinWorks: (file, accountName = '我的账号') => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('accountName', accountName)

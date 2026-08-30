@@ -1,4 +1,4 @@
-"""HTTP boundary for Sunbird's auxiliary OpenCLI Admin service."""
+"""HTTP boundary for the workbench's auxiliary OpenCLI Admin service."""
 
 import json
 import os
@@ -60,7 +60,7 @@ def parse_douyin_sec_uid(value: str) -> tuple[str, str]:
         try:
             request = Request(
                 text,
-                headers={"User-Agent": "Mozilla/5.0 (Sunbird benchmark monitor)"},
+                headers={"User-Agent": "Mozilla/5.0 (Content Workbench monitor)"},
             )
             with urlopen(request, timeout=10) as response:
                 redirected = response.geturl()

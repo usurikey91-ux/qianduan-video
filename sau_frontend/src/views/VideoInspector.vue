@@ -123,7 +123,7 @@ function startPolling() {
 async function importMaterial() {
   const response = await videoJiexiApi.importMaterial(taskId.value)
   const importedFile = response.data || {}
-  localStorage.setItem('sunbird_publish_prefill', JSON.stringify({
+  localStorage.setItem('content_workbench_publish_prefill', JSON.stringify({
     name: importedFile.filename || task.value?.filename || 'download.mp4',
     path: importedFile.filepath || '',
     size: Number(importedFile.filesize || 0) * 1024 * 1024,

@@ -517,7 +517,7 @@ const tabs = reactive([
 ])
 
 const loadParserPrefill = () => {
-  const raw = localStorage.getItem('sunbird_publish_prefill')
+  const raw = localStorage.getItem('content_workbench_publish_prefill') || localStorage.getItem('sunbird_publish_prefill')
   if (!raw) return
   try {
     const draft = JSON.parse(raw)
@@ -532,10 +532,12 @@ const loadParserPrefill = () => {
       type: 'video/mp4'
     }]
     tab.displayFileList = [...tab.fileList]
+    localStorage.removeItem('content_workbench_publish_prefill')
     localStorage.removeItem('sunbird_publish_prefill')
     ElMessage.success('解析文件已载入发布中心，请选择账号和平台')
   } catch (error) {
     console.error('Failed to load parser prefill', error)
+    localStorage.removeItem('content_workbench_publish_prefill')
     localStorage.removeItem('sunbird_publish_prefill')
   }
 }

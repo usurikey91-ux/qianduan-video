@@ -119,7 +119,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ownContentApi } from '@/api/ownContent'
 
-const accountName = ref('太阳鸟')
+const accountName = ref('我的账号')
 const selectedFile = ref(null)
 const previewData = ref(null)
 const importResult = ref(null)
@@ -157,7 +157,7 @@ const confirmImport = async () => {
   if (!canImport.value) return
   importing.value = true
   try {
-    const response = await ownContentApi.importDouyinWorks(selectedFile.value, accountName.value.trim() || '太阳鸟')
+    const response = await ownContentApi.importDouyinWorks(selectedFile.value, accountName.value.trim() || '我的账号')
     importResult.value = response.data
     ElMessage.success('导入完成')
     await fetchWorks()

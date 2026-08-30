@@ -36,7 +36,7 @@
       <div class="section-actions"><el-button type="primary" :loading="savingIntegrations" @click="saveIntegrations">保存集成配置</el-button><el-button :loading="testingIntegration" @click="testIntegration">检查视频解析服务</el-button></div>
       <div v-if="integrationForm.publisher" class="embedded-publisher-note">
         <el-tag type="success" effect="plain">发布引擎已内置</el-tag>
-        <span>social-auto-upload 已作为太阳鸟运行时适配器集成，支持 {{ integrationForm.publisher.platforms?.join('、') }}；无需再启动第二套发布后台。</span>
+        <span>多平台发布能力已作为本工作台的内置适配器运行，支持 {{ integrationForm.publisher.platforms?.join('、') }}；无需再启动第二套发布后台。</span>
       </div>
     </section>
 

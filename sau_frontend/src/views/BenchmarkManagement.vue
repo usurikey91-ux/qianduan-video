@@ -1,17 +1,18 @@
 <template>
   <div class="benchmark-management">
     <div class="page-header">
-      <h1>对标内容库</h1>
+      <div>
+        <h1>对标内容库</h1>
+        <p>账号添加一次后自动巡检，只把相对账号自身日常表现更好的作品送入待分析列表。</p>
+      </div>
+      <el-button :loading="monitorLoading" @click="refreshMonitor">刷新</el-button>
     </div>
 
     <el-card shadow="never" class="monitor-card">
       <template #header>
         <div class="card-header">
-          <div>
-            <div class="monitor-title">自动监控与爆款队列</div>
-            <div class="monitor-subtitle">采集服务负责巡检；这里只显示相对账号自身表现较好的作品。</div>
-          </div>
-          <el-button :loading="monitorLoading" @click="refreshMonitor">刷新</el-button>
+          <span>对标账号</span>
+          <el-tag effect="plain">当前已验证抖音</el-tag>
         </div>
       </template>
 
@@ -23,10 +24,10 @@
         <el-input
           v-model="monitorHomepageUrl"
           clearable
-          placeholder="粘贴对标账号主页链接或稳定账号 ID，添加一次后自动巡检"
+          placeholder="粘贴对标账号主页链接或稳定账号 ID"
           @keyup.enter="bindMonitorAccount"
         />
-          <el-button type="primary" :loading="monitorBinding" @click="bindMonitorAccount">添加对标账号</el-button>
+        <el-button type="primary" :loading="monitorBinding" @click="bindMonitorAccount">添加对标账号</el-button>
       </div>
 
       <el-alert
@@ -39,7 +40,7 @@
       />
 
       <el-table v-if="monitorAccounts.length" :data="monitorAccounts" size="small" class="monitor-table">
-        <el-table-column label="账号" min-width="220">
+        <el-table-column label="账号" min-width="260">
           <template #default="scope">
             <div class="monitor-account-name">{{ scope.row.display_name || scope.row.handle || scope.row.external_account_id }}</div>
             <div class="monitor-account-id">{{ scope.row.platform }} · {{ scope.row.external_account_id }}</div>
@@ -50,21 +51,29 @@
             <el-tag :type="monitorStatusType(scope.row.collection_status)">{{ monitorStatusText(scope.row.collection_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="last_success_at" label="最近成功" width="190" />
+        <el-table-column prop="last_success_at" label="最近成功" width="210" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="scope">
             <el-button size="small" :loading="monitorCheckingId === scope.row.id" @click="checkMonitorAccount(scope.row)">立即检查</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else-if="!monitorLoading" description="还没有绑定自动监控账号" :image-size="70" />
+      <el-empty v-else-if="!monitorLoading" description="还没有添加对标账号，系统也可以保持空状态运行" :image-size="70" />
+    </el-card>
 
-      <div class="queue-heading">
-        <span>待分析作品</span>
-        <el-tag type="danger" effect="plain">特别火优先</el-tag>
-      </div>
-      <el-table v-if="monitorWorks.length" :data="monitorWorks" size="small" class="monitor-table">
-        <el-table-column label="作品" min-width="320">
+    <el-card shadow="never" class="queue-card">
+      <template #header>
+        <div class="card-header">
+          <div>
+            <div class="card-title">待分析作品</div>
+            <div class="card-subtitle">热度只相对该账号自身基线判断；特别火仅提高处理优先级。</div>
+          </div>
+          <el-tag type="danger" effect="plain">特别火优先</el-tag>
+        </div>
+      </template>
+
+      <el-table v-if="monitorWorks.length" :data="monitorWorks" size="small">
+        <el-table-column label="作品" min-width="340">
           <template #default="scope">
             <el-link v-if="scope.row.url" :href="scope.row.url" target="_blank" type="primary">{{ scope.row.title || scope.row.external_work_id }}</el-link>
             <span v-else>{{ scope.row.title || scope.row.external_work_id }}</span>
@@ -88,368 +97,17 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else-if="!monitorLoading" description="暂无达到热度阈值的作品" :image-size="70" />
+      <el-empty v-else-if="!monitorLoading" description="暂无达到账号自身热度阈值的作品" :image-size="70" />
     </el-card>
-
-    <el-card shadow="never" class="add-card">
-      <template #header>
-        <div class="card-header"><span>平台作品库（兼容模式）</span><el-tag effect="plain">当前提供抖音适配器</el-tag></div>
-      </template>
-      <el-form label-width="100px">
-        <el-form-item label="主页链接">
-          <div class="add-row">
-            <el-input
-              v-model="homepageUrl"
-              placeholder="粘贴抖音对标账号主页链接"
-              clearable
-            />
-            <el-button type="primary" :loading="adding" @click="addAccount">
-              添加并同步
-            </el-button>
-          </div>
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <el-card shadow="never" class="auto-card">
-      <template #header>
-        <div class="card-header">
-          <span>自动找对标</span>
-          <el-button type="primary" :loading="autoDiscovering" @click="autoDiscoverAccounts">
-            开始寻找并同步
-          </el-button>
-        </div>
-      </template>
-      <el-form label-width="100px">
-        <el-form-item label="对标关键词">
-          <el-input
-            v-model="autoKeywords"
-            type="textarea"
-            :rows="3"
-            placeholder="例如：AI 自媒体、知识付费、个人IP。多个关键词用逗号或换行分隔"
-          />
-        </el-form-item>
-        <div class="auto-options">
-          <el-form-item label="找账号数">
-            <el-input-number v-model="autoLimit" :min="1" :max="20" />
-          </el-form-item>
-          <el-form-item label="每号作品数">
-            <el-input-number v-model="autoMaxVideos" :min="1" :max="30" />
-          </el-form-item>
-        </div>
-      </el-form>
-      <el-alert
-        v-if="autoResult"
-        :title="`找到 ${autoResult.summary?.found || 0} 个账号，成功同步 ${autoResult.summary?.synced || 0} 个，作品链接 ${autoResult.summary?.videoLinks || 0} 条，失败 ${autoResult.summary?.failed || 0} 个`"
-        type="success"
-        show-icon
-        :closable="false"
-      />
-      <el-table
-        v-if="autoResult?.synced?.length"
-        :data="autoResult.synced"
-        class="auto-results"
-        style="width: 100%"
-      >
-        <el-table-column label="搜索到的账号" min-width="180">
-          <template #default="scope">
-            <div class="auto-account-name">{{ scope.row.nickname || '未识别账号' }}</div>
-            <el-link :href="scope.row.homepage_url" target="_blank" type="primary">
-              打开主页
-            </el-link>
-          </template>
-        </el-table-column>
-        <el-table-column label="已同步内容" min-width="420">
-          <template #default="scope">
-            <div v-if="scope.row.videos?.length" class="content-links">
-              <el-link
-                v-for="(video, index) in scope.row.videos.slice(0, 5)"
-                :key="video.id || video.video_url"
-                :href="video.video_url"
-                target="_blank"
-                type="primary"
-                class="content-link"
-              >
-                {{ video.title || `作品 ${index + 1}` }}
-              </el-link>
-              <span v-if="scope.row.videos.length > 5" class="more-count">
-                另有 {{ scope.row.videos.length - 5 }} 条
-              </span>
-            </div>
-            <span v-else class="empty-content">
-              {{ scope.row.contentLoadFailed ? '内容链接读取失败' : '暂未同步到内容链接' }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="链接数" width="90" align="center">
-          <template #default="scope">{{ scope.row.videos?.length || 0 }}</template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
-    <el-card shadow="never">
-      <template #header>
-        <div class="card-header">
-          <span>对标账号</span>
-          <el-button :loading="loading" @click="fetchAccounts">刷新</el-button>
-        </div>
-      </template>
-
-      <el-table :data="accounts" v-loading="loading" style="width: 100%">
-        <el-table-column label="账号" min-width="220">
-          <template #default="scope">
-            <div class="account-cell">
-              <el-avatar :src="scope.row.avatar" :size="36">{{ avatarText(scope.row) }}</el-avatar>
-              <div>
-                <div class="name">{{ scope.row.nickname || '未识别账号' }}</div>
-                <el-link :href="scope.row.homepage_url" target="_blank" type="primary">
-                  打开主页
-                </el-link>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="followers_count" label="关注人" width="140" />
-        <el-table-column prop="likes_count" label="粉丝" width="140" />
-        <el-table-column prop="received_likes_count" label="获赞" width="140" />
-        <el-table-column prop="video_count" label="作品" width="140" />
-        <el-table-column prop="synced_video_count" label="已同步作品" width="120" />
-        <el-table-column label="状态" width="120">
-          <template #default="scope">
-            <el-tag :type="scope.row.status === 'success' ? 'success' : scope.row.status === 'failed' ? 'danger' : 'info'">
-              {{ statusText(scope.row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="last_sync_at" label="最近同步" width="180" />
-        <el-table-column prop="error_message" label="错误" min-width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="250" fixed="right">
-          <template #default="scope">
-            <el-button size="small" @click="loadVideos(scope.row)">
-              {{ selectedAccount?.id === scope.row.id ? '收起' : '作品' }}
-            </el-button>
-            <el-button size="small" type="primary" :loading="syncingId === scope.row.id" @click="syncAccount(scope.row)">
-              同步
-            </el-button>
-            <el-button
-              size="small"
-              type="danger"
-              plain
-              :loading="deletingId === scope.row.id"
-              @click="deleteAccount(scope.row)"
-            >
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <el-empty v-if="!loading && accounts.length === 0" description="暂无对标账号" />
-    </el-card>
-
-    <el-card v-if="selectedAccount" shadow="never" class="videos-card">
-      <template #header>
-        <div class="card-header">
-          <span>{{ selectedAccount.nickname || '对标账号' }} 的近期作品</span>
-        </div>
-      </template>
-
-      <el-table :data="videos" v-loading="videosLoading" style="width: 100%">
-        <el-table-column label="封面" width="100">
-          <template #default="scope">
-            <el-image
-              v-if="scope.row.cover_url"
-              :src="scope.row.cover_url"
-              fit="cover"
-              style="width: 72px; height: 96px; border-radius: 4px;"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column prop="title" label="标题/文案" min-width="260" show-overflow-tooltip />
-        <el-table-column prop="like_count" label="点赞" width="100" />
-        <el-table-column label="链接" min-width="220">
-          <template #default="scope">
-            <el-link :href="scope.row.video_url" target="_blank" type="primary">
-              打开作品
-            </el-link>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="同步时间" width="180" />
-        <el-table-column label="操作" width="160" fixed="right">
-          <template #default="scope">
-            <el-button
-              size="small"
-              type="primary"
-              plain
-              :loading="analyzingId === scope.row.id"
-              @click="openVideoAnalysis(scope.row)"
-            >
-              拆解
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <el-empty v-if="!videosLoading && videos.length === 0" description="暂无作品数据" />
-    </el-card>
-
-    <el-drawer
-      v-model="analysisDrawerVisible"
-      title="作品内拆解"
-      size="520px"
-      class="analysis-drawer"
-    >
-      <div v-loading="analysisLoading" class="analysis-content">
-        <template v-if="selectedVideo">
-          <section class="analysis-section">
-            <div class="section-title">作品基础信息</div>
-            <div class="video-summary">
-              <el-image
-                v-if="selectedVideo.cover_url"
-                :src="selectedVideo.cover_url"
-                fit="cover"
-                class="analysis-cover"
-              />
-              <div class="video-meta">
-                <div class="video-title">{{ selectedVideo.title || '暂无标题/文案' }}</div>
-                <el-link :href="selectedVideo.video_url" target="_blank" type="primary">
-                  打开原作品
-                </el-link>
-              </div>
-            </div>
-          </section>
-
-          <template v-if="videoAnalysis">
-            <el-alert
-              v-if="videoAnalysis.analysis_type === 'codex_cli'"
-              title="当前为 Codex CLI 深度拆解结果，已结合标题、文案、链接、封面和同步数据进行对标分析。"
-              type="success"
-              show-icon
-              :closable="false"
-              class="analysis-tip"
-            />
-            <el-alert
-              v-else-if="videoAnalysis.analysis_type === 'metadata_fallback'"
-              title="Codex CLI 暂未返回可用结果，当前展示规则兜底拆解。可稍后点击“重新拆解”再试。"
-              type="warning"
-              show-icon
-              :closable="false"
-              class="analysis-tip"
-            />
-            <el-alert
-              v-else-if="videoAnalysis.analysis_type === 'metadata'"
-              title="当前为基于已同步标题/封面/链接的元数据拆解，深度版可继续接入评论、详情页和视频转写。"
-              type="info"
-              show-icon
-              :closable="false"
-              class="analysis-tip"
-            />
-
-            <section class="analysis-section">
-              <div class="section-title">内容结构拆解</div>
-              <el-descriptions :column="1" border>
-                <el-descriptions-item label="开头钩子">
-                  {{ videoAnalysis.hook || '-' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="核心观点">
-                  {{ videoAnalysis.core_viewpoint || '-' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="总结">
-                  {{ videoAnalysis.summary || '-' }}
-                </el-descriptions-item>
-              </el-descriptions>
-            </section>
-
-            <section class="analysis-section">
-              <div class="section-title">爆点分析</div>
-              <div class="tag-list">
-                <el-tag
-                  v-for="item in videoAnalysis.viral_points"
-                  :key="item"
-                  type="warning"
-                  effect="plain"
-                >
-                  {{ item }}
-                </el-tag>
-              </div>
-              <el-empty
-                v-if="!videoAnalysis.viral_points?.length"
-                description="暂无爆点分析"
-                :image-size="80"
-              />
-            </section>
-
-            <section class="analysis-section">
-              <div class="section-title">人群痛点</div>
-              <ul class="analysis-list">
-                <li v-for="item in videoAnalysis.pain_points" :key="item">{{ item }}</li>
-              </ul>
-            </section>
-
-            <section class="analysis-section">
-              <div class="section-title">可复刻点</div>
-              <ul class="analysis-list">
-                <li v-for="item in videoAnalysis.reusable_points" :key="item">{{ item }}</li>
-              </ul>
-            </section>
-
-            <section class="analysis-section">
-              <div class="section-title">脚本复刻建议</div>
-              <div class="script-list">
-                <div
-                  v-for="(item, index) in videoAnalysis.script_suggestions"
-                  :key="item"
-                  class="script-item"
-                >
-                  <span class="script-index">{{ index + 1 }}</span>
-                  <span>{{ item }}</span>
-                </div>
-              </div>
-            </section>
-
-            <div class="drawer-actions">
-              <el-button
-                type="primary"
-                :loading="analysisLoading"
-                @click="regenerateVideoAnalysis"
-              >
-                重新拆解
-              </el-button>
-            </div>
-          </template>
-
-          <el-empty v-else-if="!analysisLoading" description="暂无拆解数据" />
-        </template>
-      </div>
-    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { benchmarkApi } from '@/api/benchmark'
 
-const homepageUrl = ref('')
-const autoKeywords = ref('')
-const autoLimit = ref(5)
-const autoMaxVideos = ref(10)
-const autoDiscovering = ref(false)
-const autoResult = ref(null)
-const loading = ref(false)
-const adding = ref(false)
-const syncingId = ref(null)
-const deletingId = ref(null)
-const accounts = ref([])
-const selectedAccount = ref(null)
-const videos = ref([])
-const videosLoading = ref(false)
-const analysisDrawerVisible = ref(false)
-const analysisLoading = ref(false)
-const analyzingId = ref(null)
-const selectedVideo = ref(null)
-const videoAnalysis = ref(null)
 const monitorHomepageUrl = ref('')
 const monitorPlatform = ref('auto')
 const platformOptions = ref([
@@ -479,19 +137,6 @@ const detectPlatform = (value) => {
   if (text.includes('youtube.com') || text.includes('youtu.be')) return 'youtube'
   if (text.includes('tiktok.com')) return 'tiktok'
   return ''
-}
-
-const avatarText = (account) => {
-  return (account.nickname || '抖').slice(0, 1)
-}
-
-const statusText = (status) => {
-  const map = {
-    success: '已同步',
-    failed: '失败',
-    pending: '待同步'
-  }
-  return map[status] || status || '未知'
 }
 
 const monitorStatusText = (status) => {
@@ -539,15 +184,12 @@ const loadPlatforms = async () => {
     const configured = response.data || []
     if (configured.length) platformOptions.value = configured
   } catch {
-    // The platform list is optional; keep the generic fallback options for an unconfigured service.
+    // 平台列表为可选能力；未连接采集服务时保留通用平台选项。
   }
 }
 
 const bindMonitorAccount = async () => {
-  if (!monitorHomepageUrl.value.trim()) {
-    ElMessage.warning('请先粘贴对标账号主页链接或稳定账号 ID')
-    return
-  }
+  if (!monitorHomepageUrl.value.trim()) return ElMessage.warning('请先粘贴对标账号主页链接或稳定账号 ID')
   monitorBinding.value = true
   monitorError.value = ''
   try {
@@ -585,424 +227,27 @@ const checkMonitorAccount = async (account) => {
 }
 
 const openWorkInInspector = (work) => {
-  if (!work?.url) return
-  router.push({ path: '/video-inspector', query: { url: work.url } })
+  if (work?.url) router.push({ path: '/video-inspector', query: { url: work.url } })
 }
 
-const fetchAccounts = async () => {
-  loading.value = true
-  try {
-    const response = await benchmarkApi.getDouyinAccounts()
-    accounts.value = response.data || []
-  } catch (error) {
-    console.error('获取对标账号失败:', error)
-    ElMessage.error('获取对标账号失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-const addAccount = async () => {
-  if (!homepageUrl.value.trim()) {
-    ElMessage.warning('请先粘贴抖音主页链接')
-    return
-  }
-  adding.value = true
-  try {
-    await benchmarkApi.addDouyinAccount(homepageUrl.value.trim())
-    ElMessage.success('对标账号已同步')
-    homepageUrl.value = ''
-    await fetchAccounts()
-  } catch (error) {
-    console.error('添加对标账号失败:', error)
-    ElMessage.error('添加对标账号失败')
-  } finally {
-    adding.value = false
-  }
-}
-
-const autoDiscoverAccounts = async () => {
-  if (!autoKeywords.value.trim()) {
-    ElMessage.warning('请先填写对标关键词')
-    return
-  }
-  autoDiscovering.value = true
-  autoResult.value = null
-  try {
-    const response = await benchmarkApi.autoDiscoverDouyinAccounts({
-      keywords: autoKeywords.value,
-      limit: autoLimit.value,
-      maxVideos: autoMaxVideos.value
-    })
-    const result = response.data || {}
-    const syncedAccounts = await Promise.all((result.synced || []).map(async (account) => {
-      try {
-        const videoResponse = await benchmarkApi.getDouyinVideos(account.id)
-        return { ...account, videos: videoResponse.data || [] }
-      } catch (error) {
-        console.error(`读取账号 ${account.id} 的作品失败:`, error)
-        return { ...account, videos: [], contentLoadFailed: true }
-      }
-    }))
-    const videoLinks = syncedAccounts.reduce((total, account) => total + account.videos.length, 0)
-    autoResult.value = {
-      ...result,
-      synced: syncedAccounts,
-      summary: { ...(result.summary || {}), videoLinks }
-    }
-    const summary = autoResult.value.summary || {}
-    ElMessage.success(`自动同步完成：${summary.synced || 0} 个账号，${summary.videoLinks || 0} 条作品链接`)
-    await fetchAccounts()
-  } catch (error) {
-    console.error('自动找对标失败:', error)
-    ElMessage.error('自动找对标失败')
-  } finally {
-    autoDiscovering.value = false
-  }
-}
-
-const syncAccount = async (account) => {
-  syncingId.value = account.id
-  try {
-    const response = await benchmarkApi.syncDouyinAccount(account.id)
-    const sync = response.data?.sync || {}
-    ElMessage.success(`同步完成，新增 ${sync.inserted || 0} 条，更新 ${sync.updated || 0} 条`)
-    await fetchAccounts()
-    if (selectedAccount.value?.id === account.id) {
-      await fetchVideosForAccount(account)
-    }
-  } catch (error) {
-    console.error('同步失败:', error)
-    ElMessage.error('同步失败')
-    await fetchAccounts()
-  } finally {
-    syncingId.value = null
-  }
-}
-
-const deleteAccount = async (account) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定删除“${account.nickname || '该对标账号'}”吗？同时会清空其 ${account.synced_video_count || 0} 条作品以及相关拆解和观点雷达记录。`,
-      '删除对标',
-      {
-        confirmButtonText: '删除并清空作品',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-  } catch (action) {
-    if (action === 'cancel' || action === 'close') return
-    throw action
-  }
-
-  deletingId.value = account.id
-  try {
-    const response = await benchmarkApi.deleteDouyinAccount(account.id)
-    const result = response.data || {}
-    if (selectedAccount.value?.id === account.id) {
-      selectedAccount.value = null
-      videos.value = []
-      selectedVideo.value = null
-      videoAnalysis.value = null
-      analysisDrawerVisible.value = false
-    }
-    if (autoResult.value?.synced) {
-      autoResult.value.synced = autoResult.value.synced.filter((item) => item.id !== account.id)
-    }
-    await fetchAccounts()
-    ElMessage.success(`已删除对标并清空 ${result.deleted_videos || 0} 条作品`)
-  } catch (error) {
-    console.error('删除对标失败:', error)
-    ElMessage.error('删除对标失败')
-  } finally {
-    deletingId.value = null
-  }
-}
-
-const fetchVideosForAccount = async (account) => {
-  videosLoading.value = true
-  try {
-    const response = await benchmarkApi.getDouyinVideos(account.id)
-    videos.value = response.data || []
-  } catch (error) {
-    console.error('获取作品失败:', error)
-    ElMessage.error('获取作品失败')
-  } finally {
-    videosLoading.value = false
-  }
-}
-
-const loadVideos = async (account) => {
-  if (selectedAccount.value?.id === account.id) {
-    selectedAccount.value = null
-    videos.value = []
-    return
-  }
-
-  selectedAccount.value = account
-  await fetchVideosForAccount(account)
-}
-
-const openVideoAnalysis = async (video) => {
-  selectedVideo.value = video
-  videoAnalysis.value = null
-  analysisDrawerVisible.value = true
-  analysisLoading.value = true
-  analyzingId.value = video.id
-  try {
-    const response = await benchmarkApi.createDouyinVideoAnalysis(video.id)
-    videoAnalysis.value = response.data || null
-  } catch (error) {
-    console.error('作品拆解失败:', error)
-    ElMessage.error('作品拆解失败')
-  } finally {
-    analysisLoading.value = false
-    analyzingId.value = null
-  }
-}
-
-const regenerateVideoAnalysis = async () => {
-  if (!selectedVideo.value) return
-  analysisLoading.value = true
-  analyzingId.value = selectedVideo.value.id
-  try {
-    const response = await benchmarkApi.createDouyinVideoAnalysis(selectedVideo.value.id, true)
-    videoAnalysis.value = response.data || null
-    ElMessage.success('拆解已更新')
-  } catch (error) {
-    console.error('重新拆解失败:', error)
-    ElMessage.error('重新拆解失败')
-  } finally {
-    analysisLoading.value = false
-    analyzingId.value = null
-  }
-}
-
-onMounted(async () => {
-  await Promise.all([fetchAccounts(), refreshMonitor(), loadPlatforms()])
-})
+onMounted(() => Promise.all([refreshMonitor(), loadPlatforms()]))
 </script>
 
 <style lang="scss" scoped>
-.benchmark-management {
-  .page-header {
-    margin-bottom: 20px;
-
-    h1 {
-      margin: 0;
-      font-size: 24px;
-      font-weight: 600;
-    }
-  }
-
-  .add-card,
-  .auto-card,
-  .videos-card,
-  .monitor-card {
-    margin-bottom: 16px;
-  }
-
-  .add-row {
-    display: flex;
-    width: 100%;
-    gap: 12px;
-  }
-
-  .card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .monitor-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #303133;
-  }
-
-  .monitor-subtitle,
-  .monitor-account-id {
-    margin-top: 4px;
-    color: #909399;
-    font-size: 12px;
-  }
-
-  .monitor-bind-row {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 14px;
-
-    .platform-select {
-      width: 140px;
-      flex: 0 0 140px;
-    }
-  }
-
-  .monitor-alert {
-    margin-bottom: 14px;
-  }
-
-  .monitor-table {
-    margin-bottom: 18px;
-  }
-
-  .monitor-account-name {
-    font-weight: 600;
-  }
-
-  .queue-heading {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 8px 0 12px;
-    font-size: 15px;
-    font-weight: 600;
-  }
-
-  .auto-options {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .auto-results {
-    margin-top: 12px;
-  }
-
-  .auto-account-name {
-    margin-bottom: 4px;
-    font-weight: 600;
-  }
-
-  .content-links {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-    padding: 6px 0;
-  }
-
-  .content-link {
-    display: block;
-    max-width: 100%;
-
-    :deep(.el-link__inner) {
-      display: block;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
-
-  .more-count,
-  .empty-content {
-    color: #909399;
-    font-size: 13px;
-  }
-
-  .account-cell {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-
-    .name {
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-  }
-
-  .analysis-content {
-    min-height: 320px;
-  }
-
-  .analysis-section {
-    margin-bottom: 20px;
-  }
-
-  .section-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 12px;
-    color: #303133;
-  }
-
-  .video-summary {
-    display: flex;
-    gap: 12px;
-  }
-
-  .analysis-cover {
-    width: 92px;
-    height: 124px;
-    border-radius: 6px;
-    flex: 0 0 auto;
-  }
-
-  .video-meta {
-    min-width: 0;
-  }
-
-  .video-title {
-    font-weight: 600;
-    line-height: 1.5;
-    margin-bottom: 8px;
-    word-break: break-word;
-  }
-
-  .analysis-tip {
-    margin-bottom: 18px;
-  }
-
-  .tag-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .analysis-list {
-    margin: 0;
-    padding-left: 20px;
-
-    li {
-      line-height: 1.7;
-      margin-bottom: 6px;
-    }
-  }
-
-  .script-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .script-item {
-    display: flex;
-    gap: 10px;
-    line-height: 1.6;
-    padding: 10px 12px;
-    background: #f5f7fa;
-    border-radius: 6px;
-  }
-
-  .script-index {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: #409eff;
-    color: #fff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    font-size: 12px;
-  }
-
-  .drawer-actions {
-    display: flex;
-    justify-content: flex-end;
-    padding-top: 8px;
-  }
+.benchmark-management { display: grid; gap: 16px; }
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.page-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+.page-header p, .card-subtitle { margin: 6px 0 0; color: #909399; font-size: 13px; }
+.card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.card-title, .card-header > span { font-weight: 600; }
+.monitor-bind-row { display: flex; gap: 12px; margin-bottom: 14px; }
+.platform-select { width: 140px; flex: 0 0 140px; }
+.monitor-alert, .monitor-table { margin-bottom: 14px; }
+.monitor-account-name { font-weight: 600; }
+.monitor-account-id { margin-top: 4px; color: #909399; font-size: 12px; }
+@media (max-width: 760px) {
+  .page-header { flex-direction: column; }
+  .monitor-bind-row { flex-direction: column; }
+  .platform-select { width: 100%; flex-basis: auto; }
 }
 </style>

@@ -230,7 +230,7 @@ def runtime_identity():
     response = jsonify({
         "code": 200,
         "data": {
-            "service": "sunbird-os-backend",
+            "service": "content-workbench-backend",
             "packaged": os.environ.get("SAU_PACKAGED") == "1",
         },
     })
@@ -302,7 +302,7 @@ def hermes_settings_api():
 def integrations_settings_api():
     settings = load_runtime_settings()
     publisher = {
-        "provider": "sunbird-social-auto-upload",
+        "provider": "content-workbench-publisher",
         "mode": "embedded",
         "available": True,
         "platforms": ["抖音", "快手", "视频号", "小红书"],
@@ -356,7 +356,7 @@ def publisher_status_api():
     return jsonify({
         "code": 200,
         "data": {
-            "provider": "sunbird-social-auto-upload",
+            "provider": "content-workbench-publisher",
             "mode": "embedded",
             "available": True,
             "platforms": ["抖音", "快手", "视频号", "小红书"],
@@ -679,13 +679,13 @@ def parse_own_douyin_import(file_storage):
     }
 
 
-def upsert_own_douyin_account(name="太阳鸟"):
-    account_name = clean_import_value(name) or "太阳鸟"
+def upsert_own_douyin_account(name="我的账号"):
+    account_name = clean_import_value(name) or "我的账号"
     return own_content_repository.upsert_account(get_db_path(), account_name)
 
 
-def save_own_douyin_import(rows, account_name="太阳鸟"):
-    account_name = clean_import_value(account_name) or "太阳鸟"
+def save_own_douyin_import(rows, account_name="我的账号"):
+    account_name = clean_import_value(account_name) or "我的账号"
     return own_content_repository.save_import(
         get_db_path(),
         rows,
@@ -1586,7 +1586,7 @@ def hello_world():  # put application's code here
         return send_from_directory(frontend_dist_dir, 'index.html')
     return jsonify({
         "code": 200,
-        "msg": "Sunbird backend is online. Run npm.cmd run build in sau_frontend to serve the UI.",
+        "msg": "Content workbench backend is online. Run npm.cmd run build in sau_frontend to serve the UI.",
         "data": {"frontend": "not_built"},
     })
 
@@ -2040,7 +2040,7 @@ def import_own_douyin_videos():
     try:
         if 'file' not in request.files:
             return jsonify({"code": 400, "msg": "请上传 CSV 或 XLSX 文件", "data": None}), 400
-        account_name = request.form.get("accountName") or request.form.get("account_name") or "太阳鸟"
+        account_name = request.form.get("accountName") or request.form.get("account_name") or "我的账号"
         parsed = parse_own_douyin_import(request.files['file'])
         result = save_own_douyin_import(parsed["rows"], account_name=account_name)
         result.update({

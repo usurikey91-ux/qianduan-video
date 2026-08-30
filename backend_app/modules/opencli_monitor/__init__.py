@@ -1,1 +1,1 @@
-"""OpenCLI Admin adapter used by the Sunbird benchmark UI."""
+"""OpenCLI Admin adapter used by the content workbench benchmark UI."""

@@ -2,10 +2,10 @@
   <main class="login-page">
     <section class="login-panel">
       <div class="brand-lock">
-        <div class="brand-mark">S</div>
+        <div class="brand-mark">拆</div>
         <div>
-          <strong>Sunbird OS</strong>
-          <span>自媒体内容拆解工作台</span>
+          <strong>自媒体内容拆解</strong>
+          <span>对标爆款分析与发布工作台</span>
         </div>
       </div>
 
