@@ -96,6 +96,26 @@ def parse_account_reference(platform: str, value: str) -> tuple[str, str | None]
     parsed = urlparse(text)
     if not parsed.hostname:
         raise ValueError("账号主页链接无效")
+
+    # 小红书分享短链不包含稳定用户 ID；跟随一次官方重定向，
+    # 再从最终的 /user/profile/{id} 路径提取 ID。
+    if normalized_platform == "xiaohongshu" and parsed.hostname.lower() in {"xhslink.cn", "xhslink.com"}:
+        try:
+            request = Request(
+                text,
+                headers={"User-Agent": "Mozilla/5.0 (Content Workbench monitor)"},
+            )
+            with urlopen(request, timeout=10) as response:
+                redirected = response.geturl()
+            redirected_parsed = urlparse(redirected)
+            profile_match = re.search(r"/user/profile/([^/?#]+)", redirected_parsed.path)
+            if profile_match:
+                external_id = profile_match.group(1).strip()
+                return external_id, f"https://www.xiaohongshu.com/user/profile/{external_id}"
+        except Exception:
+            # 如果短链服务暂时不可用，继续走通用解析，随后由采集器标记状态。
+            pass
+
     path_parts = [part for part in parsed.path.split("/") if part]
     external_id = path_parts[-1] if path_parts else parsed.hostname
     if not external_id:

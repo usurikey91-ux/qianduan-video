@@ -35,6 +35,14 @@ export const ownContentApi = {
     return http.get('/own/xiaohongshu/videos', { limit })
   },
 
+  syncDouyin: (accountName = '抖音创作者中心', limit = 20) => {
+    return http.post('/own/douyin/sync', { accountName, limit })
+  },
+
+  syncXiaohongshu: (accountName = '我的小红书账号', limit = 20) => {
+    return http.post('/own/xiaohongshu/sync', { accountName, limit })
+  },
+
   getReviewSources: () => {
     return http.get('/own/review/sources')
   }

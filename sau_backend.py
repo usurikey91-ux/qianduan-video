@@ -72,6 +72,7 @@ from backend_app.modules.mcp_server.tools import describe_tools as describe_mcp_
 from backend_app.modules.mcp_server.tools import create_tool_handlers
 from backend_app.modules.own_content_review import repository as own_content_repository
 from backend_app.modules.own_content_review import xiaohongshu_repository as xhs_content_repository
+from backend_app.modules.own_content_review import connectors as own_content_connectors
 from backend_app.modules.own_content_review.service import review_published_content
 from backend_app.modules.accounts import repository as account_repository
 from backend_app.modules.materials import repository as material_repository
@@ -2324,21 +2325,50 @@ def get_own_xiaohongshu_videos():
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
 
 
+@app.route('/own/<platform>/sync', methods=['POST'])
+def sync_own_content(platform):
+    """Synchronize creator data through the locally installed connector."""
+    payload = request.get_json(silent=True) or {}
+    account_name = str(payload.get("accountName") or "").strip()
+    try:
+        limit = max(1, min(int(payload.get("limit") or 20), 100))
+        if platform == "douyin":
+            result = own_content_connectors.sync_douyin(
+                get_db_path(), account_name or "抖音创作者中心", recent_limit=limit
+            )
+        elif platform == "xiaohongshu":
+            result = own_content_connectors.sync_xiaohongshu(
+                get_db_path(), account_name or "我的小红书账号", limit=limit
+            )
+        else:
+            return jsonify({"code": 400, "msg": "暂不支持该平台同步", "data": None}), 400
+        return jsonify({"code": 200, "msg": "同步完成", "data": result}), 200
+    except subprocess.TimeoutExpired:
+        return jsonify({"code": 504, "msg": "平台连接器超时，请检查登录状态后重试", "data": None}), 504
+    except Exception as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
 @app.route('/own/review/sources', methods=['GET'])
 def get_own_review_sources():
     """Expose truthful connector state; no source is reported as connected by default."""
+    connector_status = own_content_connectors.connector_availability()
+    douyin_available = connector_status["douyin"].get("available", False)
+    xhs_available = connector_status["xiaohongshu"].get("available", False)
     return jsonify({"code": 200, "msg": "success", "data": {
         "douyin": {
             "label": "抖音作品复盘", "connector": "Kuhakucai/douyin-mcp",
-            "status": "manual_import", "supports": [
+            "status": "sync_available" if douyin_available else "manual_import", "supports": [
                 "播放", "点赞", "评论", "收藏", "分享", "完播率", "5秒完播率", "2秒跳出率", "涨粉",
             ],
-            "note": "可导入创作者中心导出的 CSV/XLSX；MCP 连接需单独配置后启用。",
+            "note": ("可直接调用本机已安装的 douyin-mcp；也支持 CSV/XLSX 作为备用导入方式。"
+                     if douyin_available else connector_status["douyin"].get("error")),
         },
         "xiaohongshu": {
-            "label": "小红书作品复盘", "connector": "xpzouying/xiaohongshu-mcp",
-            "status": "manual_import", "supports": ["点赞", "收藏", "评论", "分享"],
-            "note": "当前先保存已实际获得的字段；创作者中心私域指标需连接后验证。",
+            "label": "小红书作品复盘", "connector": "OpenCLI 小红书适配器",
+            "status": "sync_available" if xhs_available else "manual_import", "supports": ["播放", "点赞", "收藏", "评论", "分享"],
+            "note": ("可直接调用本机已登录的 OpenCLI 小红书适配器；分享等未返回字段保持为空。"
+                     if xhs_available else connector_status["xiaohongshu"].get("error")),
         },
     }}), 200
 

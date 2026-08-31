@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1>对标内容库</h1>
-        <p>账号添加一次后自动巡检，只把相对账号自身日常表现更好的作品送入待分析列表。</p>
+        <p>账号添加一次后自动巡检，只判断作品是否达到账号自身热度阈值。</p>
       </div>
       <el-button :loading="monitorLoading" @click="refreshMonitor">刷新</el-button>
     </div>
@@ -12,7 +12,7 @@
       <template #header>
         <div class="card-header">
           <span>对标账号</span>
-          <el-tag effect="plain">当前已验证抖音</el-tag>
+          <el-tag effect="plain">平台按采集器状态显示</el-tag>
         </div>
       </template>
 
@@ -65,10 +65,10 @@
       <template #header>
         <div class="card-header">
           <div>
-            <div class="card-title">待分析作品</div>
-            <div class="card-subtitle">热度只相对该账号自身基线判断；特别火仅提高处理优先级。</div>
+            <div class="card-title">爆款作品</div>
+            <div class="card-subtitle">只看公开数据是否相对账号自身基线显著更高；不自动进行内容拆解。</div>
           </div>
-          <el-tag type="danger" effect="plain">特别火优先</el-tag>
+          <el-tag type="danger" effect="plain">特别火</el-tag>
         </div>
       </template>
 
@@ -91,9 +91,10 @@
         <el-table-column label="公开数据" min-width="220">
           <template #default="scope">{{ formatPublicMetrics(scope.row.latest_public_metrics) }}</template>
         </el-table-column>
-        <el-table-column label="下一步" width="120" fixed="right">
+        <el-table-column label="作品" width="100" fixed="right">
           <template #default="scope">
-            <el-button size="small" type="primary" :disabled="!scope.row.url" @click="openWorkInInspector(scope.row)">解析下载</el-button>
+            <el-link v-if="scope.row.url" :href="scope.row.url" target="_blank" type="primary">打开作品</el-link>
+            <span v-else class="muted">无链接</span>
           </template>
         </el-table-column>
       </el-table>
@@ -104,7 +105,6 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { benchmarkApi } from '@/api/benchmark'
 
@@ -125,12 +125,11 @@ const monitorLoading = ref(false)
 const monitorBinding = ref(false)
 const monitorCheckingId = ref(null)
 const monitorError = ref('')
-const router = useRouter()
 
 const detectPlatform = (value) => {
   const text = String(value || '').toLowerCase()
   if (text.includes('douyin.com')) return 'douyin'
-  if (text.includes('xiaohongshu.com') || text.includes('xhslink.com')) return 'xiaohongshu'
+  if (text.includes('xiaohongshu.com') || text.includes('xhslink.com') || text.includes('xhslink.cn')) return 'xiaohongshu'
   if (text.includes('bilibili.com')) return 'bilibili'
   if (text.includes('kuaishou.com')) return 'kuaishou'
   if (text.includes('weibo.com')) return 'weibo'
@@ -226,10 +225,6 @@ const checkMonitorAccount = async (account) => {
   }
 }
 
-const openWorkInInspector = (work) => {
-  if (work?.url) router.push({ path: '/video-inspector', query: { url: work.url } })
-}
-
 onMounted(() => Promise.all([refreshMonitor(), loadPlatforms()]))
 </script>
 
@@ -245,6 +240,7 @@ onMounted(() => Promise.all([refreshMonitor(), loadPlatforms()]))
 .monitor-alert, .monitor-table { margin-bottom: 14px; }
 .monitor-account-name { font-weight: 600; }
 .monitor-account-id { margin-top: 4px; color: #909399; font-size: 12px; }
+.muted { color: #909399; font-size: 12px; }
 @media (max-width: 760px) {
   .page-header { flex-direction: column; }
   .monitor-bind-row { flex-direction: column; }

@@ -80,8 +80,8 @@
           </div>
           <el-alert
             v-if="radar.ai_status === 'unavailable'"
-            title="AI 模型未配置，当前展示本地规则降级结果；下载、转写和热度证据仍然有效。"
-            :description="radar.ai_error || ''"
+            title="本次 AI 调用未成功，当前展示本地规则降级结果。"
+            :description="`模型配置仍然存在；请检查中转站响应或点击重新解析。${radar.ai_error ? `\n${radar.ai_error}` : ''}`"
             type="warning"
             :closable="false"
             show-icon
