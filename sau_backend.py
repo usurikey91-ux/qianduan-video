@@ -71,6 +71,7 @@ from backend_app.modules.script_generation.schemas import identity_script_schema
 from backend_app.modules.mcp_server.tools import describe_tools as describe_mcp_tools
 from backend_app.modules.mcp_server.tools import create_tool_handlers
 from backend_app.modules.own_content_review import repository as own_content_repository
+from backend_app.modules.own_content_review import xiaohongshu_repository as xhs_content_repository
 from backend_app.modules.own_content_review.service import review_published_content
 from backend_app.modules.accounts import repository as account_repository
 from backend_app.modules.materials import repository as material_repository
@@ -286,6 +287,7 @@ def ensure_core_tables():
     ensure_base_tables(get_db_path())
     ensure_douyin_benchmark_tables()
     ensure_douyin_own_tables()
+    ensure_xiaohongshu_own_tables()
 
 
 def create_auth_token(admin):
@@ -724,13 +726,17 @@ def ensure_douyin_own_tables():
     own_content_repository.ensure_tables(get_db_path())
 
 
+def ensure_xiaohongshu_own_tables():
+    xhs_content_repository.ensure_tables(get_db_path())
+
+
 def latest_douyin_cookie_file():
     return account_repository.latest_douyin_cookie_file(get_db_path())
 
 
 OWN_DOUYIN_FIELD_ALIASES = {
-    "title": ["作品名称", "标题", "title", "作品标题"],
-    "video_url": ["作品链接", "视频链接", "video_url", "url", "链接"],
+    "title": ["作品名称", "笔记名称", "标题", "title", "作品标题", "笔记标题"],
+    "video_url": ["作品链接", "笔记链接", "视频链接", "video_url", "url", "链接"],
     "published_at": ["发布时间", "published_at", "发布时间 "],
     "content_format": ["体裁", "内容体裁", "content_format"],
     "visibility_status": ["审核状态", "状态", "visibility_status"],
@@ -740,10 +746,10 @@ OWN_DOUYIN_FIELD_ALIASES = {
     "cover_click_rate": ["封面点击率", "cover_click_rate"],
     "two_sec_bounce_rate": ["2s跳出率", "2秒跳出率", "two_sec_bounce_rate"],
     "avg_play_duration": ["平均播放时长", "avg_play_duration"],
-    "like_count": ["点赞量", "点赞数", "like_count"],
-    "share_count": ["分享量", "分享数", "share_count"],
-    "comment_count": ["评论量", "评论数", "comment_count"],
-    "collect_count": ["收藏量", "收藏数", "collect_count"],
+    "like_count": ["点赞量", "点赞数", "点赞", "like_count"],
+    "share_count": ["分享量", "分享数", "分享", "share_count"],
+    "comment_count": ["评论量", "评论数", "评论", "comment_count"],
+    "collect_count": ["收藏量", "收藏数", "收藏", "collect_count"],
     "profile_visit_count": ["主页访问量", "profile_visit_count"],
     "follower_delta": ["粉丝增量", "涨粉数", "follower_delta"],
     "transcript": ["作品文案", "文案", "口播文案", "transcript"],
@@ -903,6 +909,17 @@ def save_own_douyin_import(rows, account_name="我的账号"):
 
 def list_own_douyin_videos(limit=100):
     return own_content_repository.list_videos(get_db_path(), limit)
+
+
+def save_own_xiaohongshu_import(rows, account_name="我的小红书账号"):
+    account_name = clean_import_value(account_name) or "我的小红书账号"
+    return xhs_content_repository.save_import(
+        get_db_path(), rows, account_name, own_douyin_source_key,
+    )
+
+
+def list_own_xiaohongshu_videos(limit=100):
+    return xhs_content_repository.list_videos(get_db_path(), limit)
 
 
 def get_douyin_benchmark_video_urls(account_id):
@@ -1825,6 +1842,7 @@ def start_idea_radar_pipeline(video_id, target_direction, force=False, force_tra
 
 ensure_douyin_benchmark_tables()
 ensure_douyin_own_tables()
+ensure_xiaohongshu_own_tables()
 
 # 获取当前目录。开发环境由 Vite 提供前端，打包环境优先使用前端构建产物。
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -2254,6 +2272,75 @@ def get_own_douyin_videos():
         return jsonify({"code": 200, "msg": "success", "data": videos}), 200
     except Exception as e:
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
+
+
+@app.route('/own/xiaohongshu/import/preview', methods=['POST'])
+def preview_own_xiaohongshu_import():
+    """Preview normalized Xiaohongshu creator exports using the shared schema."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"code": 400, "msg": "请上传 CSV 或 XLSX 文件", "data": None}), 400
+        parsed = parse_own_douyin_import(request.files['file'])
+        return jsonify({
+            "code": 200, "msg": "success",
+            "data": {
+                "headers": parsed["headers"], "field_map": parsed["field_map"],
+                "raw_count": parsed["raw_count"], "valid_count": parsed["valid_count"],
+                "preview_rows": parsed["rows"][:10],
+            },
+        }), 200
+    except Exception as e:
+        return jsonify({"code": 500, "msg": str(e), "data": None}), 500
+
+
+@app.route('/own/xiaohongshu/import', methods=['POST'])
+def import_own_xiaohongshu_videos():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"code": 400, "msg": "请上传 CSV 或 XLSX 文件", "data": None}), 400
+        account_name = (
+            request.form.get("accountName")
+            or request.form.get("account_name")
+            or "我的小红书账号"
+        )
+        parsed = parse_own_douyin_import(request.files['file'])
+        result = save_own_xiaohongshu_import(parsed["rows"], account_name=account_name)
+        result.update({
+            "raw_count": parsed["raw_count"], "valid_count": parsed["valid_count"],
+            "field_map": parsed["field_map"],
+        })
+        return jsonify({"code": 200, "msg": "success", "data": result}), 200
+    except Exception as e:
+        return jsonify({"code": 500, "msg": str(e), "data": None}), 500
+
+
+@app.route('/own/xiaohongshu/videos', methods=['GET'])
+def get_own_xiaohongshu_videos():
+    try:
+        limit = request.args.get("limit", 100)
+        videos = list_own_xiaohongshu_videos(limit)
+        return jsonify({"code": 200, "msg": "success", "data": videos}), 200
+    except Exception as e:
+        return jsonify({"code": 500, "msg": str(e), "data": None}), 500
+
+
+@app.route('/own/review/sources', methods=['GET'])
+def get_own_review_sources():
+    """Expose truthful connector state; no source is reported as connected by default."""
+    return jsonify({"code": 200, "msg": "success", "data": {
+        "douyin": {
+            "label": "抖音作品复盘", "connector": "Kuhakucai/douyin-mcp",
+            "status": "manual_import", "supports": [
+                "播放", "点赞", "评论", "收藏", "分享", "完播率", "5秒完播率", "2秒跳出率", "涨粉",
+            ],
+            "note": "可导入创作者中心导出的 CSV/XLSX；MCP 连接需单独配置后启用。",
+        },
+        "xiaohongshu": {
+            "label": "小红书作品复盘", "connector": "xpzouying/xiaohongshu-mcp",
+            "status": "manual_import", "supports": ["点赞", "收藏", "评论", "分享"],
+            "note": "当前先保存已实际获得的字段；创作者中心私域指标需连接后验证。",
+        },
+    }}), 200
 
 
 @app.route('/benchmark/douyin/accounts', methods=['GET'])
