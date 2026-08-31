@@ -25,7 +25,6 @@ from pathlib import Path
 from queue import Empty, Queue
 from flask_cors import CORS
 from itsdangerous import URLSafeTimedSerializer
-from myUtils.auth import check_cookie
 from myUtils.douyin_benchmark import (
     discover_douyin_benchmark_accounts,
     normalize_douyin_user_url,
@@ -43,10 +42,16 @@ from backend_app.agent.model_registry import (
     normalize_agent_model as agent_normalize_agent_model,
 )
 from backend_app.agent.structured_runner import (
+    call_universal_ai_structured as agent_call_universal_ai_structured,
     call_hermes_structured as agent_call_hermes_structured,
     load_json_object as agent_load_json_object,
     resolve_executable as agent_resolve_executable,
     run_codex_cli_structured as agent_run_codex_cli_structured,
+)
+from backend_app.agent.openai_compatible_client import (
+    SUPPORTED_AI_PROTOCOLS,
+    get_universal_ai_settings,
+    public_universal_ai_settings,
 )
 from backend_app.modules.benchmark.prompts import build_video_analysis_prompt
 from backend_app.modules.benchmark import repository as benchmark_repository
@@ -67,22 +72,14 @@ from backend_app.modules.mcp_server.tools import describe_tools as describe_mcp_
 from backend_app.modules.mcp_server.tools import create_tool_handlers
 from backend_app.modules.own_content_review import repository as own_content_repository
 from backend_app.modules.own_content_review.service import review_published_content
-from backend_app.modules.ai_publish import repository as publish_repository
-from backend_app.modules.ai_publish.service import publish_video as publish_video_service
 from backend_app.modules.accounts import repository as account_repository
-from backend_app.modules.accounts.service import refresh_valid_accounts
-from backend_app.modules.accounts.login_service import run_login_task, sse_stream as account_login_sse_stream
-from backend_app.modules.dashboard.service import get_dashboard_stats as dashboard_stats_service
 from backend_app.modules.materials import repository as material_repository
 from backend_app.modules.materials import service as material_service
 from backend_app.common.database import ensure_core_tables as ensure_base_tables
 from backend_app.modules.auth import local_auth
 from conf import BASE_DIR
-from myUtils.login import get_tencent_cookie, douyin_cookie_gen, get_ks_cookie, xiaohongshu_cookie_gen
-from myUtils.postVideo import post_video_tencent, post_video_DouYin, post_video_ks, post_video_xhs
 
 
-active_queues = {}
 idea_radar_job_registry = IdeaRadarJobRegistry()
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SAU_SECRET_KEY") or secrets.token_hex(32)
@@ -169,6 +166,117 @@ def resolve_executable(command, label):
     return agent_resolve_executable(command, label, get_settings_path())
 
 
+LOCAL_CODEX_MODEL_ID = "local-codex-default"
+UNIVERSAL_AI_MODEL_ID = "universal-ai-default"
+LEGACY_OPENAI_COMPATIBLE_MODEL_ID = "openai-compatible-default"
+
+
+def get_codex_cli_status():
+    configured = get_runtime_setting(
+        "codexCliPath", "codex_cli_path", env="CODEX_CLI_PATH",
+        default="codex.cmd" if os.name == "nt" else "codex",
+    )
+    try:
+        executable = resolve_executable(configured, "Codex CLI")
+        version_result = subprocess.run(
+            [executable, "--version"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=15,
+        )
+        login_result = subprocess.run(
+            [executable, "login", "status"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=20,
+        )
+        login_text = (login_result.stdout or login_result.stderr or "").strip()
+        authenticated = login_result.returncode == 0 and "logged in" in login_text.lower()
+        return {
+            "available": version_result.returncode == 0,
+            "authenticated": authenticated,
+            "executable": executable,
+            "version": (version_result.stdout or version_result.stderr or "").strip(),
+            "loginStatus": login_text,
+        }
+    except Exception as exc:
+        return {
+            "available": False, "authenticated": False, "executable": "",
+            "version": "", "loginStatus": "", "error": str(exc),
+        }
+
+
+def configure_local_codex_model(settings=None, model_name=None):
+    settings = settings or load_runtime_settings()
+    status = get_codex_cli_status()
+    if not status.get("available"):
+        raise RuntimeError(status.get("error") or "未检测到 Codex CLI")
+    if not status.get("authenticated"):
+        raise RuntimeError("Codex CLI 尚未登录，请先运行 codex login")
+    model_name = str(
+        model_name
+        or get_runtime_setting("codexAnalysisModel", "codex_model", env="CODEX_ANALYSIS_MODEL", default="gpt-5.4-mini")
+    ).strip()
+    model = normalize_agent_model({
+        "id": LOCAL_CODEX_MODEL_ID,
+        "name": "本机 Codex",
+        "provider": "codex-cli",
+        "model": model_name,
+        "reasoningEffort": "medium",
+        "enabled": True,
+    }, existing_id=LOCAL_CODEX_MODEL_ID)
+    models = get_agent_models(settings)
+    index = next((i for i, item in enumerate(models) if item.get("id") == LOCAL_CODEX_MODEL_ID), None)
+    if index is None:
+        models.append(model)
+    else:
+        models[index] = model
+    settings["agentModels"] = models
+    task_models = settings.get("taskModels") if isinstance(settings.get("taskModels"), dict) else {}
+    if not task_models.get("viralAnalysis"):
+        task_models["viralAnalysis"] = LOCAL_CODEX_MODEL_ID
+    settings["taskModels"] = task_models
+    save_runtime_settings(settings)
+    return model
+
+
+def configure_universal_ai_model(settings=None, model_name=None, provider_name=None):
+    settings = settings or load_runtime_settings()
+    model_name = str(model_name or "gpt-5.6-sol").strip()
+    provider_name = str(provider_name or get_universal_ai_settings(settings)["providerName"]).strip() or "自定义 AI"
+    if not model_name:
+        raise RuntimeError("模型名称不能为空")
+    model = normalize_agent_model({
+        "id": UNIVERSAL_AI_MODEL_ID,
+        "name": provider_name,
+        "provider": "universal-ai",
+        "model": model_name,
+        "reasoningEffort": "high",
+        "enabled": True,
+    }, existing_id=UNIVERSAL_AI_MODEL_ID)
+    models = [
+        item for item in get_agent_models(settings)
+        if item.get("id") != LEGACY_OPENAI_COMPATIBLE_MODEL_ID
+    ]
+    index = next((i for i, item in enumerate(models) if item.get("id") == UNIVERSAL_AI_MODEL_ID), None)
+    if index is None:
+        models.append(model)
+    else:
+        models[index] = model
+    settings["agentModels"] = models
+    task_models = settings.get("taskModels") if isinstance(settings.get("taskModels"), dict) else {}
+    task_models["viralAnalysis"] = UNIVERSAL_AI_MODEL_ID
+    settings["taskModels"] = task_models
+    save_runtime_settings(settings)
+    return model
+
+
+def ensure_default_agent_model():
+    settings = load_runtime_settings()
+    if get_agent_models(settings):
+        return None
+    status = get_codex_cli_status()
+    if status.get("available") and status.get("authenticated"):
+        return configure_local_codex_model(settings)
+    return None
+
+
 def ensure_local_auth_table():
     local_auth.ensure_admin_table(get_db_path())
 
@@ -176,7 +284,6 @@ def ensure_local_auth_table():
 def ensure_core_tables():
     ensure_local_auth_table()
     ensure_base_tables(get_db_path())
-    ensure_publish_records_table()
     ensure_douyin_benchmark_tables()
     ensure_douyin_own_tables()
 
@@ -311,15 +418,89 @@ def hermes_settings_api():
     return jsonify({"code": 200, "message": "Hermes 配置已保存", "data": public_hermes_settings(settings)})
 
 
+@app.route("/settings/universal-ai", methods=["GET", "PUT"])
+@app.route("/settings/openai-compatible", methods=["GET", "PUT"])
+def universal_ai_settings_api():
+    settings = load_runtime_settings()
+    selected = (settings.get("taskModels") or {}).get("viralAnalysis")
+    model = next(
+        (item for item in get_agent_models(settings) if item.get("id") in {
+            UNIVERSAL_AI_MODEL_ID, LEGACY_OPENAI_COMPATIBLE_MODEL_ID
+        }),
+        None,
+    )
+    if request.method == "GET":
+        return jsonify({"code": 200, "data": {
+            **public_universal_ai_settings(settings),
+            "model": (model or {}).get("model") or "gpt-5.6-sol",
+            "selectedForViralAnalysis": selected in {
+                UNIVERSAL_AI_MODEL_ID, LEGACY_OPENAI_COMPATIBLE_MODEL_ID
+            },
+        }})
+
+    payload = request.get_json(silent=True) or {}
+    current = get_universal_ai_settings(settings)
+    provider_name = str(payload.get("providerName") or current["providerName"]).strip() or "自定义 AI"
+    protocol = str(payload.get("protocol") or current["protocol"]).strip().lower()
+    if protocol not in SUPPORTED_AI_PROTOCOLS:
+        return jsonify({"code": 400, "message": "请选择受支持的 AI 接口协议", "data": None}), 400
+    base_url = str(payload.get("baseUrl") or "").strip().rstrip("/")
+    if not re.match(r"^https?://", base_url, re.IGNORECASE):
+        return jsonify({"code": 400, "message": "AI 接口地址必须以 http:// 或 https:// 开头", "data": None}), 400
+    try:
+        timeout = max(10, min(int(payload.get("timeout") or current["timeout"]), 1800))
+    except (TypeError, ValueError):
+        return jsonify({"code": 400, "message": "超时时间必须是数字", "data": None}), 400
+    api_key = current["apiKey"]
+    if payload.get("clearApiKey"):
+        api_key = ""
+    elif payload.get("apiKey"):
+        api_key = str(payload.get("apiKey")).strip()
+    settings["universalAI"] = {
+        "providerName": provider_name, "protocol": protocol,
+        "baseUrl": base_url, "apiKey": api_key, "timeout": timeout,
+    }
+    settings.pop("openaiCompatible", None)
+    model = configure_universal_ai_model(settings, payload.get("model"), provider_name)
+    settings = load_runtime_settings()
+    return jsonify({"code": 200, "message": "通用 AI 模型已保存并设为爆款拆解模型", "data": {
+        **public_universal_ai_settings(settings),
+        "model": model.get("model"),
+        "selectedForViralAnalysis": True,
+    }})
+
+
+@app.route("/settings/universal-ai/test", methods=["POST"])
+@app.route("/settings/openai-compatible/test", methods=["POST"])
+def test_universal_ai_settings():
+    settings = load_runtime_settings()
+    model = next(
+        (item for item in get_agent_models(settings) if item.get("id") in {
+            UNIVERSAL_AI_MODEL_ID, LEGACY_OPENAI_COMPATIBLE_MODEL_ID
+        }),
+        None,
+    )
+    if not model:
+        return jsonify({"code": 400, "message": "请先保存通用 AI 模型配置", "data": None}), 400
+    started = time.monotonic()
+    try:
+        result = agent_call_universal_ai_structured(
+            "只返回一个 JSON 对象，字段 result 的值必须是 OK。",
+            {"type": "object", "additionalProperties": False, "required": ["result"],
+             "properties": {"result": {"type": "string"}}},
+            settings=settings, model_config=model, timeout=120, log=backend_log,
+        )
+        return jsonify({"code": 200, "message": "通用 AI 模型连接正常", "data": {
+            "result": result, "elapsedMs": int((time.monotonic() - started) * 1000),
+            "provider": model.get("provider"), "model": model.get("model"),
+        }})
+    except Exception as exc:
+        return jsonify({"code": 502, "message": str(exc), "data": None}), 502
+
+
 @app.route("/settings/integrations", methods=["GET", "PUT"])
 def integrations_settings_api():
     settings = load_runtime_settings()
-    publisher = {
-        "provider": "content-workbench-publisher",
-        "mode": "embedded",
-        "available": True,
-        "platforms": ["抖音", "快手", "视频号", "小红书"],
-    }
     if request.method == "GET":
         return jsonify({"code": 200, "message": None, "data": {
             "opencliAdminBaseUrl": opencli_monitor_service.get_base_url(settings),
@@ -327,7 +508,6 @@ def integrations_settings_api():
             "videoJiexiBaseUrl": video_jiexi_client.base_url(settings),
             "videoJiexiApiTokenConfigured": bool(video_jiexi_client.api_token(settings)),
             "videoJiexiDownloadDir": str(video_jiexi_client.download_root(settings) or ""),
-            "publisher": publisher,
         }})
 
     payload = request.get_json(silent=True) or {}
@@ -359,22 +539,7 @@ def integrations_settings_api():
         "videoJiexiBaseUrl": video_jiexi_client.base_url(settings),
         "videoJiexiApiTokenConfigured": bool(video_jiexi_client.api_token(settings)),
         "videoJiexiDownloadDir": str(video_jiexi_client.download_root(settings) or ""),
-        "publisher": publisher,
     }})
-
-
-@app.route("/integrations/publisher/status", methods=["GET"])
-def publisher_status_api():
-    """Expose the embedded social-auto-upload publishing adapter."""
-    return jsonify({
-        "code": 200,
-        "data": {
-            "provider": "content-workbench-publisher",
-            "mode": "embedded",
-            "available": True,
-            "platforms": ["抖音", "快手", "视频号", "小红书"],
-        },
-    })
 
 
 @app.route("/settings/hermes/test", methods=["POST"])
@@ -420,8 +585,41 @@ def discover_hermes_models():
         return jsonify({"code": 502, "message": str(exc), "data": None}), 502
 
 
+@app.route("/settings/codex-cli", methods=["GET", "POST"])
+def codex_cli_settings_api():
+    status = get_codex_cli_status()
+    if request.method == "GET":
+        settings = load_runtime_settings()
+        selected = (settings.get("taskModels") or {}).get("viralAnalysis")
+        model = next(
+            (item for item in get_agent_models(settings) if item.get("id") == LOCAL_CODEX_MODEL_ID),
+            None,
+        )
+        return jsonify({"code": 200, "data": {
+            **status,
+            "configured": bool(model),
+            "selectedForViralAnalysis": selected == LOCAL_CODEX_MODEL_ID,
+            "model": model,
+        }})
+    try:
+        payload = request.get_json(silent=True) or {}
+        model = configure_local_codex_model(model_name=payload.get("model"))
+        settings = load_runtime_settings()
+        task_models = settings.get("taskModels") if isinstance(settings.get("taskModels"), dict) else {}
+        task_models["viralAnalysis"] = LOCAL_CODEX_MODEL_ID
+        settings["taskModels"] = task_models
+        save_runtime_settings(settings)
+        return jsonify({"code": 200, "message": "本机 Codex 已设为爆款拆解模型", "data": {
+            **get_codex_cli_status(), "configured": True,
+            "selectedForViralAnalysis": True, "model": model,
+        }})
+    except Exception as exc:
+        return jsonify({"code": 400, "message": str(exc), "data": None}), 400
+
+
 @app.route("/settings/agent-models", methods=["GET", "POST"])
 def agent_models_api():
+    ensure_default_agent_model()
     settings = load_runtime_settings()
     if request.method == "GET":
         task_models = settings.get("taskModels") if isinstance(settings.get("taskModels"), dict) else {}
@@ -486,11 +684,11 @@ def test_agent_model(model_id):
         return jsonify({"code": 404, "message": "Agent 模型不存在", "data": None}), 404
     started = time.monotonic()
     try:
-        result = call_hermes_structured(
+        result = run_agent_structured(
             "只返回一个 JSON 对象，字段 result 的值必须是 OK。",
             {"type": "object", "additionalProperties": False, "required": ["result"],
              "properties": {"result": {"type": "string"}}},
-            model_config=model, timeout=60,
+            model_config=model, timeout=120,
         )
         return jsonify({"code": 200, "message": "模型测试成功", "data": {
             "result": result, "elapsedMs": int((time.monotonic() - started) * 1000),
@@ -517,10 +715,6 @@ def backend_log(message):
             file.write(f"[{datetime.now().isoformat()}] {message}\n")
     except Exception:
         pass
-
-def ensure_publish_records_table():
-    publish_repository.ensure_tables(get_db_path())
-
 
 def ensure_douyin_benchmark_tables():
     benchmark_repository.ensure_tables(get_db_path())
@@ -777,7 +971,7 @@ def split_title_parts(title):
     text = re.sub(r"\s+", " ", title or "").strip()
     if not text:
         return []
-    parts = re.split(r"[，。！？!?；;\n\r]+", text)
+    parts = re.split(r"[，,。！？!?；;\n\r]+", text)
     return [part.strip() for part in parts if part.strip()]
 
 
@@ -1248,6 +1442,53 @@ def transcribe_idea_radar_media(media_path, progress_callback=None):
     )
 
 
+def download_idea_radar_media(video_url, work_dir, progress_callback=None):
+    """Use the reusable video-jiexi adapter first, then keep the local fallback."""
+    settings = load_runtime_settings()
+    if video_jiexi_client.base_url(settings):
+        try:
+            if progress_callback:
+                progress_callback(5, "正在调用视频解析服务获取公开媒体")
+            inspection = video_jiexi_client.inspect(video_url, settings=settings)
+            inspection_id = inspection.get("inspectionId") if isinstance(inspection, dict) else None
+            if not inspection_id:
+                raise RuntimeError("视频解析服务未返回 inspectionId")
+            formats = inspection.get("formats") if isinstance(inspection, dict) else []
+            format_id = str((formats or [{}])[0].get("id") or "")
+            task = video_jiexi_client.start_download(inspection_id, format_id or None, "video", settings)
+            task_id = task.get("id") if isinstance(task, dict) else None
+            if not task_id:
+                raise RuntimeError("视频解析服务未返回下载任务 ID")
+            while True:
+                current = video_jiexi_client.get_task(task_id, settings)
+                state = str(current.get("state") or "")
+                percent = float(current.get("progress") or 0)
+                if progress_callback:
+                    progress_callback(min(98, max(8, percent)), "视频解析服务正在下载")
+                if state == "completed":
+                    filename, content = video_jiexi_client.download_file(task_id, settings)
+                    suffix = Path(filename or "").suffix or ".mp4"
+                    target = Path(work_dir) / f"source{suffix}"
+                    target.write_bytes(content)
+                    if progress_callback:
+                        progress_callback(100, "视频解析服务下载完成")
+                    return target
+                if state in {"error", "cancelled"}:
+                    raise RuntimeError(current.get("error") or f"下载任务{state}")
+                time.sleep(1.5)
+        except Exception as exc:
+            backend_log(f"video-jiexi idea radar download failed, fallback to direct: {exc}")
+            if progress_callback:
+                progress_callback(5, "视频解析服务暂不可用，切换备用下载方式")
+    return download_douyin_video(
+        video_url, work_dir,
+        base_dir=BASE_DIR,
+        latest_cookie_file=latest_douyin_cookie_file,
+        progress_callback=progress_callback,
+        log=backend_log,
+    )
+
+
 def clean_transcript_text(text):
     return idea_radar_media.clean_transcript_text(text)
 
@@ -1266,9 +1507,27 @@ def parse_metric_number(value):
 
 
 def list_idea_radar_videos(limit=80):
+    sync_hot_monitor_works()
     return benchmark_repository.list_idea_radar_videos(
         get_db_path(), parse_metric_number, limit
     )
+
+
+def sync_hot_monitor_works():
+    """Mirror the current hot queue into the reusable analysis pipeline."""
+    try:
+        works = opencli_monitor_service.list_analysis_queue(load_runtime_settings())
+    except Exception as exc:
+        backend_log(f"hot queue mirror skipped: {exc}")
+        return {"synced": 0, "skipped": 0, "error": str(exc)}
+    synced = 0
+    skipped = 0
+    for work in works:
+        if benchmark_repository.upsert_monitor_queue_video(get_db_path(), work):
+            synced += 1
+        else:
+            skipped += 1
+    return {"synced": synced, "skipped": skipped}
 
 
 def classify_idea_theme(text):
@@ -1337,95 +1596,82 @@ def build_migration_angles(theme, text):
     ]
 
 
-def generate_idea_radar(video, target_direction=None):
-    target = target_direction or "AI 生产系统研究员"
-    source_text = pick_analysis_source_text(video)
-    theme = classify_idea_theme(source_text)
+def generate_idea_radar(video, target_direction=None, transcript=None):
+    """Platform-agnostic local fallback when the optional AI layer is unavailable."""
     account = video.get("account_name") or "对标账号"
+    title = str(video.get("title") or "这条对标作品").strip()
+    topic = re.sub(r"\s*#.*$", "", title).strip()[:42] or "这条对标作品"
+    transcript = str(transcript or "").strip()
     like_count = video.get("like_count") or "0"
-    evidence_types = pick_evidence_type(source_text, like_count)
-    migration_angles = build_migration_angles(theme, source_text)
-    hook = split_title_parts(source_text)[0] if split_title_parts(source_text) else source_text[:48]
-
-    audience_anxieties = [
-        "收藏了很多 AI 工具，但不知道怎么变成自己的产出",
-        "知道热点很热，却不知道普通人能抓住什么机会",
-        "会做单点尝试，但缺少从选题、制作、发布到复盘的闭环",
+    metrics = [
+        f"点赞 {like_count}",
+        f"评论 {video.get('comment_count') or '未提供'}",
+        f"收藏 {video.get('collect_count') or '未提供'}",
+        f"分享 {video.get('share_count') or '未提供'}",
     ]
-    if theme == "AI 变现闭环":
-        audience_anxieties.insert(0, "想用 AI 赚钱，但不知道从开发、获客到交付怎么串起来")
-    elif theme == "AI 生产系统":
-        audience_anxieties.insert(0, "想让 AI 真正接管工作流，而不是只停留在工具尝鲜")
-    elif theme == "数字资产沉淀":
-        audience_anxieties.insert(0, "每天产生很多信息，却没有沉淀成可复用资产")
-
-    asset_label = {
-        "AI 变现闭环": "变现闭环",
-        "AI 生产系统": "Skill 资产库",
-        "开源工具机会": "机会雷达",
-        "数字资产沉淀": "第二大脑资产",
-        "普通人入门路径": "入门路径",
-        "AI 新职业地图": "新职业地图",
-        "AI 机会识别": "机会翻译系统",
-    }.get(theme, "观点迁移能力")
-
-    contrarian = {
-        "AI 变现闭环": "AI 变现的关键不是会多少工具，而是有没有一条从问题到交付的闭环。",
-        "AI 生产系统": "真正值钱的不是 AI 工具清单，而是你沉淀下来的 Skill 资产库。",
-        "开源工具机会": "开源项目不是技术圈新闻，而是普通人提前发现需求变化的雷达。",
-        "数字资产沉淀": "数据不是用来看过去的，而是用来生产下一条内容的。",
-        "普通人入门路径": "AI 入门不要先买设备或报课，先跑通一个真实任务。",
-    }.get(theme, "爆款不是热点本身，而是把热点翻译成普通人的机会。")
-
+    is_food = any(word in f"{title} {transcript}" for word in ["汉堡", "冰淇淋", "可乐", "美食", "口味", "好吃", "餐"])
+    theme = "产品实测与性价比" if is_food else "具体场景下的经验分享"
+    hook = split_title_parts(title)[0][:48] or topic
+    viewpoint = (
+        "观众愿意停下来，不一定是为了产品本身，而是想尽快知道它值不值、怎么选、有没有坑。"
+        if is_food else "观众愿意停下来，不只是因为话题，而是想获得一个更省时间、更能执行的判断。"
+    )
     titles = [
-        f"我拆了{account}一条高赞作品，发现爆的不是话题，是{asset_label}",
-        f"做 AI 账号没流量，不是工具不够多，是你没有自己的{asset_label}",
-        f"别再追 AI 热点了，把热点变成你的{asset_label}才值钱",
-        f"为什么这条能拿到{like_count}赞？因为它讲中了普通人的机会焦虑",
-        f"普通人做 AI，最该沉淀的不是教程，而是一套可复用流程",
+        f"{topic}到底值不值？我只讲三个实测判断",
+        f"别只看宣传：{topic}真正该怎么选",
+        f"把{topic}拆开看，最容易被忽略的是这一步",
     ]
-
-    opening_script = (
-        f"我刚拆了一条对标作品，来自{account}，点赞大约是{like_count}。\n"
-        f"表面上它讲的是：{hook}。\n"
-        f"但真正让人停下来的，不是这个话题本身，而是它背后的机会翻译：{contrarian}\n"
-        f"这给我的启发是，如果我的账号定位是{target}，我就不能只搬运工具，"
-        "而要把对标、观点、证据和行动路径串成一条内容生产系统。"
-    )
-    personalized_script = (
-        f"最近我拆了一条来自{account}的高赞作品，点赞大约是{like_count}。\n"
-        f"它表面讲的是：{hook}。\n\n"
-        f"但如果站在我这个「{target}」的身份来看，我真正想提醒你的不是这个热点本身，"
-        f"而是它背后的一个变化：{contrarian}\n\n"
-        "很多人做内容，会停在追热点、搬工具、改标题这一步。可真正能长期跑出来的账号，"
-        "一定是在做一件事：把外部变化翻译成自己受众能执行的路径。\n\n"
-        f"所以这条内容我会这样迁移：第一，先讲清楚这个变化服务谁；第二，给出一个最小交付物，"
-        f"比如{migration_angles[0]}；第三，用一次真实发布或一个小样本去验证，而不是直接 All in。\n\n"
-        "如果你也在做 AI 或自媒体，不要只收藏爆款。你要问的是：这条内容里的结构、痛点和证据，"
-        "能不能变成我自己的选题、脚本和交付物。能迁移，才真的值得对标。"
-    )
-
-    return {
-        "radar_type": "metadata",
-        "target_direction": target,
-        "source": {
-            "id": video.get("id"),
-            "account_name": account,
-            "title": video.get("title"),
-            "video_url": video.get("video_url"),
-            "like_count": like_count,
-            "like_score": parse_metric_number(like_count),
-            "cover_url": video.get("cover_url"),
+    variants = [
+        {
+            "level": "轻度改编", "title": titles[0],
+            "what_to_keep": "保留原作的具体对象、开头反差和快速给判断的节奏。",
+            "what_to_change": "换成自己的实测对象、镜头和结论依据，不复述原作者体验。",
+            "script_outline": f"前三秒抛出“{hook}”；展示一个关键细节；给出值不值的结论；补一个适合/不适合的人群。",
         },
+        {
+            "level": "中度改编", "title": titles[1],
+            "what_to_keep": "保留“替观众做选择”的实用价值。",
+            "what_to_change": "改用对比叙事：原本以为怎样，实测后为什么改变判断。",
+            "script_outline": "先给预期，再给实测反差；用两到三个具体标准解释；最后给明确选择建议。",
+        },
+        {
+            "level": "深度改编", "title": titles[2],
+            "what_to_keep": "保留真实场景和可讨论的观点。",
+            "what_to_change": "从单品评测扩展为一套选择方法，增加反例与限制条件。",
+            "script_outline": "用一个常见误区开场；拆解判断标准；给一个反例；让观众在评论区补充自己的标准。",
+        },
+    ]
+    script = (
+        f"{hook}。\n\n"
+        f"我这次不急着下结论，先把大家最在意的三个点讲清楚。第一，看它到底有没有解决实际场景里的问题；第二，看同价位有没有更稳的选择；第三，看它适不适合你自己的需求。\n\n"
+        f"原作品之所以容易被讨论，不只是因为{topic}，而是它把一个模糊的“值不值”变成了能立刻判断的细节。\n\n"
+        "所以如果我重新拍，我会保留这个判断框架，但换成自己的实测、自己的对比和自己的结论。别急着跟风，先看你真正需要的是什么。你会怎么选，评论区说说。"
+    )
+    return {
+        "radar_type": "metadata", "target_direction": "",
+        "source": {"id": video.get("id"), "account_name": account, "title": title, "video_url": video.get("video_url"), "like_count": like_count, "like_score": parse_metric_number(like_count), "cover_url": video.get("cover_url")},
         "viral_theme": theme,
-        "audience_anxieties": audience_anxieties[:4],
-        "contrarian_viewpoint": contrarian,
-        "evidence_types": evidence_types,
-        "migration_angles": migration_angles,
+        "audience_anxieties": ["不想花冤枉时间或钱", "想快速得到明确判断", "担心只看到宣传、看不到真实体验"],
+        "contrarian_viewpoint": viewpoint,
+        "evidence_types": ["公开互动信号", "视频转写" if transcript else "标题与公开字段", "编辑推断", "待验证假设"],
+        "migration_angles": ["保留具体场景，换成自己的实测", "保留判断框架，补充不同对比对象", "把单点体验升级为可复用选择方法"],
         "recommended_titles": titles,
-        "opening_script": opening_script,
-        "personalized_script": personalized_script,
-        "formula": "爆款 = 人群焦虑 × 反常识观点 × 可验证证据 × 可迁移行动",
+        "opening_script": f"{hook}。别急着跟风，我先把最关键的判断点讲清楚。",
+        "personalized_script": script, "complete_script": script, "adaptation_variants": variants,
+        "formula": "可参考性 = 具体场景 × 明确判断 × 真实细节 × 可执行选择",
+        "content_breakdown": {
+            "summary": f"作品围绕“{topic}”建立具体场景，再用实测细节帮助观众做选择。",
+            "target_audience": "对同类产品或场景有直接需求、想快速判断值不值的人。",
+            "hook": hook, "structure": ["具体对象或反差开头", "展示关键细节", "给出判断", "补充适用条件或互动引导"],
+            "core_viewpoint": viewpoint, "evidence": metrics + (["本地转写已完成"] if transcript else []),
+            "emotional_turn": "从好奇或犹豫，转向获得一个可执行的选择标准。",
+            "spread_promise": "让观众快速获得一个能复述、能拿去判断的结论。",
+            "reusable_mechanisms": ["具体对象开头", "先结论后依据", "明确适用与不适用人群"],
+            "non_reusable_parts": ["原作者的个人体验和镜头素材", "未提供的评论样本、播放量和完播率"],
+            "opportunity_chain": ["原作提供具体场景", "提炼判断标准", "换成自己的证据重新表达"],
+            "gaps": ["公开页面通常没有播放量和完播率", "当前没有评论样本或关键帧证据"],
+            "confidence": "中：热度、标题和转写可验证；传播因果仍需通过二创发布结果验证。"
+        }
     }
 
 
@@ -1474,19 +1720,50 @@ def call_hermes_structured(prompt, schema, model_config=None, timeout=None):
     )
 
 
+def run_agent_structured(prompt, schema, model_config=None, timeout=None, task_name="viralAnalysis"):
+    settings = load_runtime_settings()
+    if model_config is None:
+        ensure_default_agent_model()
+        settings = load_runtime_settings()
+        model_config = get_task_agent_model(task_name, settings)
+    provider = str(model_config.get("provider") or "").strip().lower()
+    if provider in {"codex", "codex-cli", "openai-codex-cli"}:
+        configured_codex_cmd = get_runtime_setting(
+            "codexCliPath", "codex_cli_path", env="CODEX_CLI_PATH",
+            default="codex.cmd" if os.name == "nt" else "codex",
+        )
+        return agent_run_codex_cli_structured(
+            prompt,
+            schema,
+            base_dir=BASE_DIR,
+            codex_cmd=configured_codex_cmd,
+            codex_model=model_config.get("model") or "gpt-5.4-mini",
+            timeout=timeout or int(get_runtime_setting(
+                "codexAnalysisTimeout", "codex_timeout",
+                env="CODEX_ANALYSIS_TIMEOUT_SECONDS", default="300",
+            )),
+            log=backend_log,
+        )
+    if provider in {"universal-ai", "openai-compatible", "openai_compatible"}:
+        return agent_call_universal_ai_structured(
+            prompt, schema, settings=settings, model_config=model_config,
+            timeout=timeout, log=backend_log,
+        )
+    return call_hermes_structured(
+        prompt, schema, model_config=model_config, timeout=timeout
+    )
+
+
 def run_codex_structured(prompt, schema, timeout=None):
-    return call_hermes_structured(prompt, schema, timeout=timeout)
+    return run_agent_structured(prompt, schema, timeout=timeout)
 
 
 def generate_identity_script(identity_profile, radar_result, benchmark_analysis=None):
-    settings = load_runtime_settings()
-    return agent_call_hermes_structured(
+    return run_agent_structured(
         build_identity_script_prompt(identity_profile, radar_result, benchmark_analysis),
         identity_script_schema(),
-        settings=settings,
+        timeout=get_hermes_settings(load_runtime_settings())["timeout"],
         task_name="scriptGeneration",
-        timeout=get_hermes_settings(settings)["timeout"],
-        log=backend_log,
     )
 
 
@@ -1495,6 +1772,23 @@ def load_idea_radar_video(video_id):
 
 
 def run_idea_radar_pipeline(video_id, target_direction, force_transcription=False):
+    def run_structured_with_fallback(prompt, schema):
+        try:
+            return run_codex_structured(prompt, schema)
+        except Exception as exc:
+            # AI 是增强层，不应阻断已完成的视频下载、转写和基础拆解。
+            video = load_idea_radar_video(video_id) or {}
+            transcript_state = get_idea_radar_transcript(video_id) or {}
+            fallback_video = dict(video)
+            fallback = generate_idea_radar(
+                fallback_video,
+                target_direction,
+                transcript=transcript_state.get("cleaned_transcript") or "",
+            )
+            fallback["ai_status"] = "unavailable"
+            fallback["ai_error"] = str(exc)[:300]
+            return fallback
+
     return run_idea_radar_pipeline_core(
         video_id,
         target_direction,
@@ -1502,12 +1796,12 @@ def run_idea_radar_pipeline(video_id, target_direction, force_transcription=Fals
         load_video=load_idea_radar_video,
         get_transcript=get_idea_radar_transcript,
         update_progress=update_idea_radar_progress,
-        download_video=download_douyin_video,
+        download_video=download_idea_radar_media,
         transcribe_media=transcribe_idea_radar_media,
         clean_transcript=clean_transcript_text,
         build_prompt=build_transcript_radar_prompt,
         schema_factory=get_transcript_radar_schema,
-        run_structured=run_codex_structured,
+        run_structured=run_structured_with_fallback,
         get_agent_model=get_task_agent_model,
         parse_metric_number=parse_metric_number,
         registry=idea_radar_job_registry,
@@ -1529,48 +1823,6 @@ def start_idea_radar_pipeline(video_id, target_direction, force=False, force_tra
     return started or get_idea_radar_transcript(video_id)
 
 
-def save_publish_record(platform_type, title, tags, file_list, account_list, status, error_message=None,
-                          views=0, likes=0, comments=0, shares=0, video_url=None):
-    return publish_repository.save_record(
-        get_db_path(),
-        platform_type,
-        title,
-        tags,
-        file_list,
-        account_list,
-        status,
-        error_message,
-        views,
-        likes,
-        comments,
-        shares,
-        video_url,
-    )
-
-
-def validate_account_files_for_platform(platform_type, account_list):
-    return account_repository.validate_account_files_for_platform(
-        get_db_path(),
-        platform_type,
-        account_list,
-    )
-
-
-def publish_video_payload(payload):
-    return publish_video_service(
-        payload,
-        validate_accounts=validate_account_files_for_platform,
-        publishers={
-            1: post_video_xhs,
-            2: post_video_tencent,
-            3: post_video_DouYin,
-            4: post_video_ks,
-        },
-        save_record=save_publish_record,
-    )
-
-
-ensure_publish_records_table()
 ensure_douyin_benchmark_tables()
 ensure_douyin_own_tables()
 
@@ -1698,62 +1950,6 @@ def get_all_files():
         }), 500
 
 
-@app.route("/getValidAccounts",methods=['GET'])
-async def getValidAccounts():
-    rows_list = await refresh_valid_accounts(
-        get_db_path(),
-        check_cookie=check_cookie,
-        log=safe_print,
-    )
-    return jsonify(
-                    {
-                        "code": 200,
-                        "msg": None,
-                        "data": rows_list
-                    }),200
-
-@app.route('/getPublishRecords', methods=['GET'])
-def get_publish_records():
-    try:
-        records = publish_repository.list_records(get_db_path())
-        return jsonify({"code": 200, "msg": "success", "data": records}), 200
-    except Exception as e:
-        return jsonify({"code": 500, "msg": str(e), "data": None}), 500
-
-
-
-@app.route('/publish/updateStats', methods=['POST'])
-def update_publish_stats():
-    """手动更新某条发布记录的流量数据"""
-    try:
-        data = request.get_json()
-        record_id = data.get('id')
-        if not record_id:
-            return jsonify({"code": 400, "msg": "缺少记录ID"}), 400
-
-        fields = publish_repository.update_stats(get_db_path(), record_id, data)
-        if not fields:
-            return jsonify({"code": 400, "msg": "没有需要更新的字段"}), 400
-        return jsonify({"code": 200, "msg": "更新成功", "data": fields}), 200
-    except Exception as e:
-        return jsonify({"code": 500, "msg": str(e), "data": None}), 500
-
-
-@app.route('/publish/batchUpdateStats', methods=['POST'])
-def batch_update_publish_stats():
-    """批量更新多条记录的流量数据（来自前端批量操作或爬取结果）"""
-    try:
-        data = request.get_json()
-        records = data.get('records', [])
-        if not records:
-            return jsonify({"code": 400, "msg": "没有记录"}), 400
-
-        updated = publish_repository.batch_update_stats(get_db_path(), records)
-        return jsonify({"code": 200, "msg": f"更新成功 {updated} 条记录", "data": {"updated": updated}}), 200
-    except Exception as e:
-        return jsonify({"code": 500, "msg": str(e), "data": None}), 500
-
-
 @app.route('/account/updateFollower', methods=['POST'])
 def update_account_follower():
     """更新账号粉丝数"""
@@ -1777,22 +1973,6 @@ def get_account_followers():
     try:
         accounts = account_repository.list_followers(get_db_path())
         return jsonify({"code": 200, "msg": "success", "data": accounts}), 200
-    except Exception as e:
-        return jsonify({"code": 500, "msg": str(e), "data": None}), 500
-
-
-@app.route('/dashboard/stats', methods=['GET'])
-def get_dashboard_stats():
-    try:
-        ensure_publish_records_table()
-        data = dashboard_stats_service(get_db_path())
-        return jsonify(
-            {
-                "code": 200,
-                "msg": "success",
-                "data": data,
-            }
-        ), 200
     except Exception as e:
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
 
@@ -1957,7 +2137,7 @@ def video_jiexi_import():
         target.write_bytes(raw_content)
         filesize = round(float(target.stat().st_size) / (1024 * 1024), 2)
         material_repository.add_file_record(get_db_path(), original_name, filesize, target_name)
-        return jsonify({"code": 200, "msg": "文件已准备到发布中心", "data": {"filename": original_name, "filepath": target_name, "filesize": filesize}}), 200
+        return jsonify({"code": 200, "msg": "文件已保存到本地素材目录", "data": {"filename": original_name, "filepath": target_name, "filesize": filesize}}), 200
     except video_jiexi_client.VideoJiexiError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
     except OSError as exc:
@@ -2190,8 +2370,8 @@ def get_idea_radar_videos():
 def analyze_idea_radar_video(video_id):
     try:
         payload = request.get_json(silent=True) or {}
-        target_direction = payload.get("targetDirection") or payload.get("target_direction")
-        target_direction = target_direction or "AI 生产系统研究员"
+        # 爆款拆解不依赖账号定位；保留空值只是兼容旧数据库字段。
+        target_direction = ""
         if not load_idea_radar_video(video_id):
             return jsonify({"code": 404, "msg": "作品不存在", "data": None}), 404
         task = start_idea_radar_pipeline(
@@ -2286,10 +2466,6 @@ def mcp_review_published_content(work_id=None, limit=50):
     return review_published_content(videos)
 
 
-def mcp_publish_video(**kwargs):
-    return publish_video_payload(kwargs)
-
-
 def mcp_tool_handlers():
     return create_tool_handlers({
         "collect_douyin_account": mcp_collect_douyin_account,
@@ -2298,7 +2474,6 @@ def mcp_tool_handlers():
         "run_idea_radar": mcp_run_idea_radar,
         "generate_my_script": mcp_generate_my_script,
         "review_published_content": mcp_review_published_content,
-        "publish_video": mcp_publish_video,
     })
 
 
@@ -2394,53 +2569,6 @@ def delete_account():
 
 
 # SSE 登录接口
-@app.route('/login')
-def login():
-    # 1 小红书 2 视频号 3 抖音 4 快手
-    type = request.args.get('type')
-    # 账号名
-    id = request.args.get('id')
-
-    # 模拟一个用于异步通信的队列
-    status_queue = Queue()
-    active_queues[id] = status_queue
-
-    def on_close():
-        print(f"清理队列: {id}")
-        del active_queues[id]
-    # 启动异步任务线程
-    thread = threading.Thread(target=run_async_function, args=(type,id,status_queue), daemon=True)
-    thread.start()
-    response = Response(sse_stream(status_queue,), mimetype='text/event-stream')
-    response.headers['Cache-Control'] = 'no-cache'
-    response.headers['X-Accel-Buffering'] = 'no'  # 关键：禁用 Nginx 缓冲
-    response.headers['Content-Type'] = 'text/event-stream'
-    response.headers['Connection'] = 'keep-alive'
-    return response
-
-@app.route('/postVideo', methods=['POST'])
-def postVideo():
-    data = request.get_json() or {}
-    print("File List:", data.get('fileList', []))
-    print("Account List:", data.get('accountList', []))
-    try:
-        publish_video_payload(data)
-    except Exception as e:
-        return jsonify(
-            {
-                "code": 500,
-                "msg": str(e),
-                "data": None
-            }), 500
-    # 返回响应给客户端
-    return jsonify(
-        {
-            "code": 200,
-            "msg": None,
-            "data": None
-        }), 200
-
-
 @app.route('/updateUserinfo', methods=['POST'])
 def updateUserinfo():
     # 获取JSON数据
@@ -2466,48 +2594,9 @@ def updateUserinfo():
             "data": None
         }), 500
 
-@app.route('/postVideoBatch', methods=['POST'])
-def postVideoBatch():
-    data_list = request.get_json()
-
-    if not isinstance(data_list, list):
-        return jsonify({"error": "Expected a JSON array"}), 400
-    for data in data_list:
-        print("File List:", data.get('fileList', []))
-        print("Account List:", data.get('accountList', []))
-        try:
-            publish_video_payload(data or {})
-        except Exception as e:
-            return jsonify({"code": 500, "msg": str(e), "data": None}), 500
-    # 返回响应给客户端
-    return jsonify(
-        {
-            "code": 200,
-            "msg": None,
-            "data": None
-        }), 200
-
-# 包装函数：在线程中运行异步函数
-def run_async_function(type,id,status_queue):
-    return run_login_task(
-        type,
-        id,
-        status_queue,
-        login_handlers={
-            "1": xiaohongshu_cookie_gen,
-            "2": get_tencent_cookie,
-            "3": douyin_cookie_gen,
-            "4": get_ks_cookie,
-        },
-        log=backend_log,
-    )
-
-# SSE 流生成器函数
-def sse_stream(status_queue):
-    return account_login_sse_stream(status_queue, log=backend_log)
-
 if __name__ == '__main__':
     ensure_core_tables()
+    ensure_default_agent_model()
     app.run(
         host=os.environ.get("SAU_BACKEND_HOST", "127.0.0.1"),
         port=int(os.environ.get("SAU_BACKEND_PORT", "5409")),

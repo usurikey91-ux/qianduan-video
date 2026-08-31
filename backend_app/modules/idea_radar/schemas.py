@@ -9,6 +9,7 @@ def transcript_radar_schema():
         "required": [
             "viral_theme", "audience_anxieties", "contrarian_viewpoint", "evidence_types",
             "migration_angles", "recommended_titles", "opening_script", "personalized_script",
+            "adaptation_variants", "complete_script",
             "formula", "content_breakdown",
         ],
         "properties": {
@@ -20,6 +21,24 @@ def transcript_radar_schema():
             "recommended_titles": string_array(),
             "opening_script": {"type": "string"},
             "personalized_script": {"type": "string"},
+            "complete_script": {"type": "string"},
+            "adaptation_variants": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["level", "title", "what_to_keep", "what_to_change", "script_outline"],
+                    "properties": {
+                        "level": {"type": "string"},
+                        "title": {"type": "string"},
+                        "what_to_keep": {"type": "string"},
+                        "what_to_change": {"type": "string"},
+                        "script_outline": {"type": "string"},
+                    },
+                },
+            },
             "formula": {"type": "string"},
             "content_breakdown": {
                 "type": "object",

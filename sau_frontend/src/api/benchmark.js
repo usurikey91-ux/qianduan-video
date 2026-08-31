@@ -55,9 +55,8 @@ export const benchmarkApi = {
     return http.get('/idea-radar/douyin/videos', { limit })
   },
 
-  analyzeIdeaRadarVideo: (videoId, targetDirection = 'AI 生产系统研究员', options = {}) => {
+  analyzeIdeaRadarVideo: (videoId, options = {}) => {
     return http.post(`/idea-radar/douyin/videos/${videoId}/analyze`, {
-      targetDirection,
       force: Boolean(options.force),
       forceTranscription: Boolean(options.forceTranscription)
     })

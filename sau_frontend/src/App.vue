@@ -5,7 +5,7 @@
         <div class="brand-mark">拆</div>
         <div v-show="!isCollapse" class="brand-copy">
           <strong>自媒体内容拆解</strong>
-          <span>对标爆款分析与发布工作台</span>
+          <span>对标爆款分析工作台</span>
         </div>
       </div>
 
@@ -34,14 +34,6 @@
         <el-menu-item index="/video-inspector">
           <el-icon><VideoPlay /></el-icon>
           <template #title>视频解析</template>
-        </el-menu-item>
-        <el-menu-item index="/publish-center">
-          <el-icon><Upload /></el-icon>
-          <template #title>发布中心</template>
-        </el-menu-item>
-        <el-menu-item index="/account-management">
-          <el-icon><User /></el-icon>
-          <template #title>发布账号</template>
         </el-menu-item>
         <el-menu-item index="/agent-models">
           <el-icon><Setting /></el-icon>
@@ -90,8 +82,6 @@ import {
   Refresh,
   Setting,
   TrendCharts,
-  Upload,
-  User,
   VideoPlay
 } from '@element-plus/icons-vue'
 
@@ -104,8 +94,6 @@ const pageMeta = {
   '/idea-radar': { kicker: 'Insight', title: '爆款拆解' },
   '/own-content-review': { kicker: 'Review', title: '作品复盘' },
   '/video-inspector': { kicker: 'Video Jiexi', title: '视频解析' },
-  '/publish-center': { kicker: 'Publish', title: '发布中心' },
-  '/account-management': { kicker: 'Publishing Accounts', title: '发布账号' },
   '/data': { kicker: 'Data', title: '数据明细' },
   '/agent-models': { kicker: 'Settings', title: '设置' }
 }

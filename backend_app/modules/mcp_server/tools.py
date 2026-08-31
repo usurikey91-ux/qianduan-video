@@ -74,22 +74,6 @@ TOOL_DEFINITIONS = [
             },
         },
     },
-    {
-        "name": "publish_video",
-        "description": "调用发布链路发布作品。",
-        "input_schema": {
-            "type": "object",
-            "required": ["platform_type", "file_list", "account_list", "title"],
-            "properties": {
-                "platform_type": {"type": "integer"},
-                "file_list": {"type": "array", "items": {"type": "string"}},
-                "account_list": {"type": "array", "items": {"type": "string"}},
-                "title": {"type": "string"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "thumbnail_path": {"type": "string"},
-            },
-        },
-    },
 ]
 
 
@@ -122,13 +106,5 @@ def create_tool_handlers(services):
         "review_published_content": lambda args: services["review_published_content"](
             work_id=args.get("work_id"),
             limit=args.get("limit", 50),
-        ),
-        "publish_video": lambda args: services["publish_video"](
-            platform_type=args["platform_type"],
-            file_list=args["file_list"],
-            account_list=args["account_list"],
-            title=args["title"],
-            tags=args.get("tags") or [],
-            thumbnail_path=args.get("thumbnail_path"),
         ),
     }

@@ -428,7 +428,112 @@ def list_idea_radar_videos(db_path, parse_metric_number, limit=80):
     videos = []
     for row in rows:
         item = dict(row)
+        try:
+            raw_data = json.loads(item.get("raw_data") or "{}")
+        except Exception:
+            raw_data = {}
+        monitor_work = raw_data.get("monitor_work") if isinstance(raw_data, dict) else {}
+        monitor_work = monitor_work if isinstance(monitor_work, dict) else {}
+        hot_status = str(
+            monitor_work.get("status")
+            or raw_data.get("status") if isinstance(raw_data, dict) else ""
+        ).strip().lower()
+        # 爆款拆解只接收热度筛选器的结果；旧的手动导入作品不会混入队列。
+        if hot_status not in {"hot", "very_hot"}:
+            continue
+        item["hot_status"] = hot_status
+        item["relative_multiple"] = monitor_work.get("relative_multiple") or raw_data.get("relative_multiple")
+        item["monitor_metrics"] = monitor_work.get("latest_public_metrics") or raw_data.get("metrics") or {}
         item["like_score"] = parse_metric_number(item.get("like_count"))
         videos.append(item)
-    videos.sort(key=lambda item: (item["like_score"], item.get("id") or 0), reverse=True)
+    videos.sort(key=lambda item: (
+        item.get("hot_status") == "very_hot",
+        float(item.get("relative_multiple") or 0),
+        item["like_score"],
+        item.get("id") or 0,
+    ), reverse=True)
     return videos[:limit]
+
+
+def upsert_monitor_queue_video(db_path, work):
+    """Mirror one hot OpenCLI work into the legacy local analysis tables.
+
+    The analysis/transcription pipeline is intentionally reused, while the
+    monitor service remains the source of truth for hot-work selection.
+    """
+    ensure_tables(db_path)
+    work = work if isinstance(work, dict) else {}
+    account = work.get("account") if isinstance(work.get("account"), dict) else {}
+    external_account_id = str(
+        account.get("external_account_id")
+        or work.get("external_account_id")
+        or ""
+    ).strip()
+    platform = str(account.get("platform") or work.get("platform") or "douyin").strip().lower()
+    video_url = str(work.get("url") or work.get("video_url") or "").strip()
+    title = str(work.get("title") or "").strip()
+    if not external_account_id or not video_url or not title:
+        return None
+    account_name = str(
+        account.get("display_name")
+        or account.get("handle")
+        or f"{platform} · {external_account_id[-8:]}"
+    ).strip()
+    metrics = work.get("latest_public_metrics")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    raw_data = {
+        "monitor_work": work,
+        "published_at": work.get("published_at"),
+        "relative_multiple": work.get("relative_multiple"),
+        "status": work.get("status"),
+        "metrics": metrics,
+    }
+    homepage_url = f"https://www.douyin.com/user/{external_account_id}"
+    with sqlite3.connect(Path(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        account_row = conn.execute(
+            "SELECT id FROM douyin_benchmark_accounts WHERE homepage_url = ?",
+            (homepage_url,),
+        ).fetchone()
+        if account_row:
+            account_id = account_row[0]
+            conn.execute(
+                "UPDATE douyin_benchmark_accounts SET nickname = ?, sec_uid = ?, status = 'success', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (account_name, external_account_id, account_id),
+            )
+        else:
+            cursor = conn.execute(
+                "INSERT INTO douyin_benchmark_accounts (homepage_url, sec_uid, nickname, status) VALUES (?, ?, ?, 'success')",
+                (homepage_url, external_account_id, account_name),
+            )
+            account_id = cursor.lastrowid
+        conn.execute(
+            """INSERT INTO douyin_benchmark_videos
+                (account_id, video_url, title, cover_url, like_count, comment_count,
+                 share_count, collect_count, raw_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(account_id, video_url) DO UPDATE SET
+                title = excluded.title,
+                like_count = excluded.like_count,
+                comment_count = excluded.comment_count,
+                share_count = excluded.share_count,
+                collect_count = excluded.collect_count,
+                raw_data = excluded.raw_data""",
+            (
+                account_id,
+                video_url,
+                title,
+                work.get("cover_url"),
+                metrics.get("like_count"),
+                metrics.get("comment_count"),
+                metrics.get("share_count"),
+                metrics.get("favorite_count") or metrics.get("collect_count"),
+                json.dumps(raw_data, ensure_ascii=False),
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT id FROM douyin_benchmark_videos WHERE account_id = ? AND video_url = ?",
+            (account_id, video_url),
+        ).fetchone()
+    return int(row[0]) if row else None

@@ -1,6 +1,11 @@
 import { http } from '@/utils/request'
 
 export const agentModelsApi = {
+  getCodexCliStatus: () => http.get('/settings/codex-cli'),
+  configureCodexCli: (model = 'gpt-5.6-sol') => http.post('/settings/codex-cli', { model }),
+  getUniversalAISettings: () => http.get('/settings/universal-ai'),
+  saveUniversalAISettings: (data) => http.put('/settings/universal-ai', data),
+  testUniversalAI: () => http.post('/settings/universal-ai/test'),
   getHermesSettings: () => http.get('/settings/hermes'),
   saveHermesSettings: (data) => http.put('/settings/hermes', data),
   testHermes: () => http.post('/settings/hermes/test'),

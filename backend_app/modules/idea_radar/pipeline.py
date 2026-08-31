@@ -3,6 +3,29 @@ from datetime import datetime
 from pathlib import Path
 
 
+def normalize_radar_result(radar):
+    """Keep the UI usable when an AI provider returns an older/partial shape."""
+    result = dict(radar or {}) if isinstance(radar, dict) else {}
+    titles = list(result.get("recommended_titles") or [])
+    variants = list(result.get("adaptation_variants") or [])
+    while len(variants) < 3:
+        index = len(variants)
+        variants.append({
+            "level": ("轻度改编", "中度改编", "深度改编")[index],
+            "title": titles[index] if index < len(titles) else f"参考原作的改编方向 {index + 1}",
+            "what_to_keep": "保留原作已经验证过的钩子与信息节奏。",
+            "what_to_change": "替换场景、案例或叙事角度，避免换词仿写。",
+            "script_outline": "钩子 → 事实/例子 → 机制解释 → 行动建议 → 结尾引导。",
+        })
+    result["adaptation_variants"] = variants[:3]
+    complete_script = str(result.get("complete_script") or result.get("personalized_script") or "").strip()
+    if not complete_script:
+        complete_script = str(result.get("opening_script") or "").strip()
+    result["complete_script"] = complete_script
+    result["personalized_script"] = str(result.get("personalized_script") or complete_script)
+    return result
+
+
 def run_pipeline(
     video_id,
     target_direction,
@@ -92,8 +115,10 @@ def run_pipeline(
                 analysis_basis="transcript",
                 target_direction=target_direction, radar_json=None, error_message=None,
             )
-        update_progress(video_id, "analyzing", 84, "正在调用 Hermes Gateway 拆解正文与内容机会")
-        radar = run_structured(build_prompt(video, transcript, target_direction), schema_factory())
+        update_progress(video_id, "analyzing", 84, "正在调用已配置的 AI 模型拆解视频正文与传播机制")
+        radar = normalize_radar_result(
+            run_structured(build_prompt(video, transcript, target_direction), schema_factory())
+        )
         try:
             selected_agent_model = get_agent_model()
             radar["agent_model"] = {

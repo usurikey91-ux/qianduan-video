@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1>视频解析</h1>
-        <p>调用已配置的视频解析服务处理公开分享链接，下载后直接交给发布中心。</p>
+        <p>调用已配置的视频解析服务处理公开分享链接，并将结果保存到本地素材目录。</p>
       </div>
       <el-tag :type="serviceAvailable ? 'success' : 'warning'" effect="plain">
         {{ serviceAvailable ? '解析服务在线' : '解析服务未连接' }}
@@ -34,7 +34,7 @@
         <el-select v-if="info.formats?.length" v-model="formatId" placeholder="选择画质" style="min-width: 240px">
           <el-option v-for="format in info.formats" :key="format.id" :label="format.label || format.id" :value="String(format.id)" />
         </el-select>
-        <el-button type="primary" :loading="downloading" @click="download">下载并准备发布</el-button>
+        <el-button type="primary" :loading="downloading" @click="download">下载视频</el-button>
       </div>
       <el-empty v-else description="当前版本先处理单条视频；图文或混合轮播取决于已配置的解析服务" :image-size="60" />
     </el-card>
@@ -44,9 +44,7 @@
       <el-progress :percentage="Math.round(Number(task.progress) || 0)" :status="task.state === 'error' ? 'exception' : task.state === 'completed' ? 'success' : undefined" />
       <div class="task-message">{{ task.error || task.filename || '正在下载…' }}</div>
       <div class="task-actions">
-        <el-button v-if="task.state === 'completed' && !imported" type="success" @click="importMaterial">准备到发布中心</el-button>
-        <el-button v-if="imported" type="primary" @click="goPublish">去发布中心</el-button>
-        <el-tag v-if="imported" type="success">文件已准备</el-tag>
+        <el-tag v-if="task.state === 'completed'" type="success">文件已保存到本地</el-tag>
       </div>
     </el-card>
   </div>
@@ -54,7 +52,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { videoJiexiApi } from '@/api/videoJiexi'
 
@@ -65,9 +63,7 @@ const task = ref(null)
 const taskId = ref('')
 const inspecting = ref(false)
 const downloading = ref(false)
-const imported = ref(false)
 const route = useRoute()
-const router = useRouter()
 const serviceAvailable = ref(false)
 const serviceBaseUrl = ref('')
 let pollTimer
@@ -88,7 +84,6 @@ async function inspect() {
     info.value = response.data
     formatId.value = response.data?.formats?.[0]?.id ? String(response.data.formats[0].id) : ''
     task.value = null
-    imported.value = false
     ElMessage.success('解析完成')
   } finally { inspecting.value = false }
 }
@@ -100,7 +95,6 @@ async function download() {
     const response = await videoJiexiApi.download(info.value.inspectionId, formatId.value)
     task.value = response.data
     taskId.value = response.data?.id || ''
-    imported.value = false
     startPolling()
   } finally { downloading.value = false }
 }
@@ -120,22 +114,6 @@ function startPolling() {
   }, 2000)
 }
 
-async function importMaterial() {
-  const response = await videoJiexiApi.importMaterial(taskId.value)
-  const importedFile = response.data || {}
-  localStorage.setItem('content_workbench_publish_prefill', JSON.stringify({
-    name: importedFile.filename || task.value?.filename || 'download.mp4',
-    path: importedFile.filepath || '',
-    size: Number(importedFile.filesize || 0) * 1024 * 1024,
-    url: `${import.meta.env.VITE_API_BASE_URL || ''}/getFile?filename=${encodeURIComponent(importedFile.filepath || '')}`
-  }))
-  imported.value = true
-  ElMessage.success(response.msg || '文件已准备，可前往发布中心')
-}
-
-function goPublish() {
-  router.push('/publish-center')
-}
 
 onMounted(() => {
   checkStatus().catch(() => { serviceAvailable.value = false })

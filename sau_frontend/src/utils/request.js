@@ -10,9 +10,7 @@ const request = axios.create({
 
 request.interceptors.request.use(
   (config) => {
-    const token = config.url?.startsWith('/api/koubo')
-      ? localStorage.getItem('koubo_admin_token')
-      : localStorage.getItem('token')
+    const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }

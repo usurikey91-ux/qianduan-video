@@ -1,9 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import Dashboard from '../views/Dashboard.vue'
-import AccountManagement from '../views/AccountManagement.vue'
-import PublishCenter from '../views/PublishCenter.vue'
 import About from '../views/About.vue'
-import DataView from '../views/DataView.vue'
 import BenchmarkManagement from '../views/BenchmarkManagement.vue'
 import IdeaRadar from '../views/IdeaRadar.vue'
 import OwnContentReview from '../views/OwnContentReview.vue'
@@ -22,24 +19,9 @@ const routes = [
     component: Dashboard
   },
   {
-    path: '/account-management',
-    name: 'AccountManagement',
-    component: AccountManagement
-  },
-  {
     path: '/material-management',
     name: 'MaterialManagement',
-    redirect: '/publish-center'
-  },
-  {
-    path: '/publish-center',
-    name: 'PublishCenter',
-    component: PublishCenter
-  },
-  {
-    path: '/data',
-    name: 'DataView',
-    component: DataView
+    redirect: '/video-inspector'
   },
   {
     path: '/benchmark-management',
@@ -62,15 +44,15 @@ const routes = [
     component: AgentModels
   },
   {
-    path: '/koubo-studio',
-    name: 'KouboStudio',
-    redirect: '/publish-center'
-  },
-  {
     path: '/video-inspector',
     name: 'VideoInspector',
     component: VideoInspector
   },
+  // Legacy publishing URLs intentionally redirect to the analysis workspace.
+  // The workbench no longer performs account login or video publishing.
+  { path: '/publish-center', redirect: '/idea-radar' },
+  { path: '/account-management', redirect: '/idea-radar' },
+  { path: '/koubo-studio', redirect: '/idea-radar' },
   {
     path: '/about',
     name: 'About',

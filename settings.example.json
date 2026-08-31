@@ -3,5 +3,16 @@
   "opencliAdminApiToken": "",
   "videoJiexiBaseUrl": "",
   "videoJiexiApiToken": "",
-  "videoJiexiDownloadDir": ""
+  "videoJiexiDownloadDir": "",
+  "codexCliPath": "",
+  "codexAnalysisTimeout": 300,
+  "universalAI": {
+    "providerName": "",
+    "protocol": "openai-compatible",
+    "baseUrl": "",
+    "apiKey": "",
+    "timeout": 300
+  },
+  "agentModels": [],
+  "taskModels": {}
 }

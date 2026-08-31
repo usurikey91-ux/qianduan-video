@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .gateway_client import get_hermes_settings, hermes_request
 from .model_registry import get_task_agent_model
+from .openai_compatible_client import get_universal_ai_settings, universal_ai_completion
 
 
 def load_json_object(text):
@@ -116,3 +117,54 @@ def call_hermes_structured(prompt, schema, *, settings, model_config=None, task_
             last_error = exc
             break
     raise RuntimeError(f"Hermes 结构化分析失败：{last_error}")
+
+
+def call_universal_ai_structured(
+    prompt, schema, *, settings, model_config=None, task_name="viralAnalysis", timeout=None, log=None
+):
+    """Call an OpenAI-compatible /chat/completions endpoint without requiring Codex login."""
+    model_config = model_config or get_task_agent_model(task_name, settings=settings)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是严格的结构化内容分析 Agent。只返回一个合法 JSON 对象，不要使用 Markdown。"
+                "输出必须匹配以下 JSON Schema："
+                + json.dumps(schema, ensure_ascii=False)
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ]
+    if log:
+        config = get_universal_ai_settings(settings)
+        log(f"universal-ai structured protocol={config['protocol']} model={model_config.get('model')}")
+
+    last_error = None
+    for _ in range(2):
+        content = ""
+        try:
+            content = universal_ai_completion(
+                messages, settings=settings, model_config=model_config,
+                timeout=timeout or get_universal_ai_settings(settings)["timeout"],
+            )
+            if isinstance(content, list):
+                content = "".join(
+                    str(item.get("text") or "") if isinstance(item, dict) else str(item)
+                    for item in content
+                )
+            if not content:
+                raise RuntimeError("AI 服务未返回分析内容")
+            return load_json_object(content)
+        except (json.JSONDecodeError, ValueError) as exc:
+            last_error = exc
+            messages.extend([
+                {"role": "assistant", "content": str(content)[-6000:]},
+                {"role": "user", "content": "上一次输出不是合法 JSON，请修正并只返回符合 Schema 的 JSON 对象。"},
+            ])
+        except Exception as exc:
+            last_error = exc
+            break
+    raise RuntimeError(f"通用 AI 模型分析失败：{last_error}")
+
+
+call_openai_compatible_structured = call_universal_ai_structured

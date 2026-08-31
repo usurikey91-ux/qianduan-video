@@ -6,7 +6,7 @@ import sau_backend
 
 
 class IdeaRadarPipelineTests(unittest.TestCase):
-    def test_prompt_uses_full_transcript_and_requires_opportunity_chain(self):
+    def test_prompt_uses_full_transcript_and_requires_three_adaptations(self):
         prompt = sau_backend.build_transcript_radar_prompt(
             {
                 "id": 1,
@@ -19,9 +19,10 @@ class IdeaRadarPipelineTests(unittest.TestCase):
             "普通人的 AI 机会",
         )
         self.assertIn("过去只有程序员能写自动化", prompt)
-        self.assertIn("具体交付物", prompt)
-        self.assertIn("潜在付费者", prompt)
-        self.assertIn("最小验证", prompt)
+        self.assertIn("轻度改编", prompt)
+        self.assertIn("中度改编", prompt)
+        self.assertIn("深度改编", prompt)
+        self.assertIn("complete_script", prompt)
 
     def test_clean_transcript_removes_repeated_punctuation(self):
         cleaned = sau_backend.clean_transcript_text("第一句。。。。\n  第二句！！！")

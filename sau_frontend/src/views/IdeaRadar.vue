@@ -2,18 +2,12 @@
   <div class="idea-radar">
     <div class="page-header">
       <div>
-        <h1>观点雷达</h1>
-        <p>从抖音对标作品里提炼可迁移观点，生成你能直接拍的选题。</p>
+        <h1>爆款拆解</h1>
+        <p>只处理热度队列里的火作品，结合视频、转写和公开信号，生成可验证的参考性二创。</p>
       </div>
       <div class="header-actions">
-        <el-input
-          v-model="targetDirection"
-          placeholder="账号定位"
-          clearable
-          style="width: 260px"
-        />
         <el-button type="primary" :loading="loadingVideos" @click="fetchVideos">
-          刷新作品
+          刷新爆款
         </el-button>
       </div>
     </div>
@@ -21,7 +15,7 @@
     <div class="radar-layout">
       <section class="video-panel">
         <div class="panel-title">
-          <span>高赞对标作品</span>
+          <span>待拆解爆款作品</span>
           <small>{{ filteredVideos.length }} 条</small>
         </div>
         <div class="filter-row">
@@ -38,7 +32,12 @@
           >
             <div class="video-meta">
               <span class="account">{{ video.account_name || '对标账号' }}</span>
-              <span class="likes">{{ formatNumber(video.like_score) }} 赞</span>
+              <span class="likes">
+                <el-tag size="small" :type="video.hot_status === 'very_hot' ? 'danger' : 'warning'">
+                  {{ video.hot_status === 'very_hot' ? '特别火' : '火' }}
+                </el-tag>
+                <span>{{ video.relative_multiple ? `${Number(video.relative_multiple).toFixed(1)}x` : '—' }}</span>
+              </span>
             </div>
             <div class="video-title">{{ video.title }}</div>
           </button>
@@ -53,9 +52,21 @@
               <span class="source-account">{{ radar.source.account_name }}</span>
               <h2>{{ radar.viral_theme }}</h2>
             </div>
-            <el-link :href="radar.source.video_url" target="_blank" type="primary">
-              打开原作品
-            </el-link>
+            <div class="source-actions">
+              <el-tag v-if="selectedVideo?.hot_status" :type="selectedVideo.hot_status === 'very_hot' ? 'danger' : 'warning'">
+                {{ selectedVideo.hot_status === 'very_hot' ? '特别火' : '火' }}
+              </el-tag>
+              <el-link :href="radar.source.video_url" target="_blank" type="primary">打开原作品</el-link>
+              <el-button size="small" type="success" @click="openVideoInspector">解析视频</el-button>
+            </div>
+          </div>
+
+          <div class="metric-strip">
+            <div><span>点赞</span><strong>{{ formatNumber(selectedVideo?.like_count || radar.source.like_count) }}</strong></div>
+            <div><span>评论</span><strong>{{ formatNumber(selectedVideo?.comment_count) }}</strong></div>
+            <div><span>收藏</span><strong>{{ formatNumber(selectedVideo?.collect_count) }}</strong></div>
+            <div><span>分享</span><strong>{{ formatNumber(selectedVideo?.share_count) }}</strong></div>
+            <div><span>相对倍数</span><strong>{{ selectedVideo?.relative_multiple ? `${Number(selectedVideo.relative_multiple).toFixed(1)}x` : '未提供' }}</strong></div>
           </div>
 
           <div class="formula">{{ radar.formula }}</div>
@@ -63,7 +74,18 @@
           <div class="analysis-basis">
             <el-tag type="success" effect="plain">根据视频完整文案分析</el-tag>
             <span v-if="taskState?.engine">{{ taskState.engine }} · {{ taskState.model }}</span>
+            <el-tag v-if="radar.agent_model" type="primary" effect="plain">
+              AI：{{ radar.agent_model.name }} · {{ radar.agent_model.model }}
+            </el-tag>
           </div>
+          <el-alert
+            v-if="radar.ai_status === 'unavailable'"
+            title="AI 模型未配置，当前展示本地规则降级结果；下载、转写和热度证据仍然有效。"
+            :description="radar.ai_error || ''"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
 
           <el-collapse v-if="taskState?.progress_log?.length" class="completion-log">
             <el-collapse-item
@@ -140,7 +162,20 @@
           </div>
 
           <div class="section-block">
-            <div class="section-label">可拍选题</div>
+            <div class="section-label">三个参考性二创方案</div>
+            <div v-if="radar.adaptation_variants?.length" class="adaptation-list">
+              <article v-for="(variant, index) in radar.adaptation_variants" :key="`${variant.level}-${index}`" class="adaptation-card">
+                <div class="adaptation-heading"><el-tag size="small">{{ variant.level }}</el-tag><strong>{{ variant.title }}</strong></div>
+                <p><b>保留：</b>{{ variant.what_to_keep }}</p>
+                <p><b>改变：</b>{{ variant.what_to_change }}</p>
+                <p><b>大纲：</b>{{ variant.script_outline }}</p>
+              </article>
+            </div>
+            <div v-else class="empty-note">当前分析结果没有返回三个改编方案，请重试。</div>
+          </div>
+
+          <div class="section-block">
+            <div class="section-label">对应选题标题</div>
             <div class="title-list">
               <div v-for="(title, index) in radar.recommended_titles" :key="title" class="title-item">
                 <span>{{ index + 1 }}</span>
@@ -154,9 +189,9 @@
             <pre class="script-box">{{ radar.opening_script }}</pre>
           </div>
 
-          <div v-if="radar.personalized_script" class="section-block">
-            <div class="section-label">适合我的完整口播文案</div>
-            <pre class="script-box">{{ radar.personalized_script }}</pre>
+          <div v-if="radar.complete_script || radar.personalized_script" class="section-block">
+            <div class="section-label">完整可修改脚本</div>
+            <pre class="script-box">{{ radar.complete_script || radar.personalized_script }}</pre>
           </div>
         </template>
 
@@ -227,6 +262,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { benchmarkApi } from '@/api/benchmark'
+import { useRouter } from 'vue-router'
 
 const videos = ref([])
 const selectedVideo = ref(null)
@@ -235,7 +271,7 @@ const taskState = ref(null)
 const keyword = ref('')
 const loadingVideos = ref(false)
 const analyzing = ref(false)
-const targetDirection = ref('AI 生产系统研究员')
+const router = useRouter()
 let pollingTimer = null
 let selectionToken = 0
 
@@ -300,7 +336,7 @@ const selectVideo = async (video) => {
   taskState.value = null
   analyzing.value = true
   try {
-    const res = await benchmarkApi.analyzeIdeaRadarVideo(video.id, targetDirection.value)
+    const res = await benchmarkApi.analyzeIdeaRadarVideo(video.id)
     if (token !== selectionToken) return
     applyTaskState(res.data)
     if (!radar.value && !['failed', 'success'].includes(res.data?.status)) {
@@ -349,11 +385,7 @@ const retryAnalysis = async () => {
   radar.value = null
   analyzing.value = true
   try {
-    const res = await benchmarkApi.analyzeIdeaRadarVideo(
-      selectedVideo.value.id,
-      targetDirection.value,
-      { force: true }
-    )
+    const res = await benchmarkApi.analyzeIdeaRadarVideo(selectedVideo.value.id, { force: true })
     if (token !== selectionToken) return
     applyTaskState(res.data)
     startPolling(selectedVideo.value.id, token)
@@ -362,6 +394,15 @@ const retryAnalysis = async () => {
   } finally {
     analyzing.value = false
   }
+}
+
+const openVideoInspector = () => {
+  const sourceUrl = radar.value?.source?.video_url || selectedVideo.value?.video_url
+  if (!sourceUrl) {
+    ElMessage.warning('原作品链接缺失，暂时无法进入视频解析')
+    return
+  }
+  router.push({ path: '/video-inspector', query: { url: sourceUrl } })
 }
 
 onMounted(fetchVideos)
@@ -492,6 +533,33 @@ onBeforeUnmount(stopPolling)
     font-size: 24px;
     color: #111827;
   }
+}
+
+.source-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 4px 0 18px;
+
+  > div {
+    padding: 10px 12px;
+    border: 1px solid #edf0f4;
+    border-radius: 8px;
+    background: #fafbfc;
+    display: grid;
+    gap: 4px;
+  }
+
+  span { color: #8a94a6; font-size: 12px; }
+  strong { color: #1f2937; font-size: 16px; }
 }
 
 .source-account {
@@ -705,6 +773,39 @@ onBeforeUnmount(stopPolling)
   gap: 10px;
 }
 
+.adaptation-list {
+  display: grid;
+  gap: 12px;
+}
+
+.adaptation-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+
+  p {
+    margin: 8px 0 0;
+    color: #4b5563;
+    line-height: 1.65;
+  }
+}
+
+.adaptation-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  strong { color: #111827; line-height: 1.5; }
+}
+
+.empty-note {
+  padding: 14px;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  color: #6b7280;
+}
+
 .title-item {
   display: flex;
   align-items: flex-start;
@@ -760,5 +861,7 @@ onBeforeUnmount(stopPolling)
   .idea-radar .header-actions {
     margin-top: 12px;
   }
+
+  .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

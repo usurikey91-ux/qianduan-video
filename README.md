@@ -2,7 +2,7 @@
 
 这是一个面向内容创作者的可复用工作台：先采集对标账号的公开作品和互动数据，再筛选出相对账号日常表现更好的作品，进入视频解析、内容拆解和发布流程。
 
-项目由三个可替换部分组成：对标采集与热度筛选、视频解析服务、内置多平台发布引擎。未配置外部采集或解析服务时，工作台仍可启动并使用发布账号和发布中心。
+项目由两个可替换部分组成：对标采集与热度筛选、视频解析服务。发布使用独立的 social-auto-upload 工具，不嵌入本工作台。
 
 这个项目适合内容创作者、自媒体运营者和个人团队使用。它不是单纯的上传工具，而是一个可以持续沉淀账号、对标作品和发布结果的可部署运营工作台。
 
@@ -31,7 +31,7 @@
 -   **作品数据沉淀**：保存作品标题/文案、点赞数、作品链接、封面和同步时间，形成自己的对标作品库。
 -   **作品内容拆解**：基于已同步的标题和文案，生成开头钩子、核心观点、内容结构、爆点分析、人群痛点、可复刻点和脚本建议。
 -   **发布记录追踪**：每次发布都会记录平台、标题、素材、账号、状态和错误信息，方便复盘和排查问题。
--   **发布工作台**：发布账号、视频解析和发布中心在同一工作台内完成；解析下载的文件可直接交给发布中心。
+-   **视频解析**：调用可配置的解析服务，将公开分享链接下载到本地素材目录；发布由独立工具完成。
 -   **Playwright 浏览器缓存迁移**：将 Playwright 浏览器运行依赖迁移到 E 盘，减少 C 盘占用并提升本地部署稳定性。
 
 简单说，这个版本想解决的是：从“发视频”升级到“找对标、拆内容、做发布、看结果”的完整内容运营流程。文件只作为发布过程中的临时输入，不再维护独立的素材资产产品页。
@@ -137,7 +137,7 @@ pwsh -File .\scripts\setup-local.ps1
     npm install
     npm run dev
     ```
-    前端项目将在 `http://localhost:5173` 启动，在浏览器中打开此链接即可访问。
+    前端项目将在 `http://localhost:5174` 启动，在浏览器中打开此链接即可访问。
 
 
 > 非程序员用户可以参考：[新手级教程](https://juejin.cn/post/7372114027840208911)
@@ -148,6 +148,29 @@ pwsh -File .\scripts\setup-local.ps1
 ### OpenCLI Admin 辅助监控
 
 “对标内容库”可通过可选的 OpenCLI Admin 服务自动发现对标账号新作品，并读取 `hot`/`very_hot` 待分析队列。部署时通过环境变量 `OPENCLI_ADMIN_BASE_URL`，或在 `settings.json` 中配置 `opencliAdminBaseUrl` 指定地址。平台是否可采集由采集服务的适配器决定，主系统不绑定某一个平台。
+
+### 统一启动
+
+Windows 本机可在项目根目录运行：
+
+```powershell
+pwsh -File .\scripts\workbench.ps1 start -OpenBrowser
+```
+
+启动器会依次检查并启动视频解析、OpenCLI Admin、主后端和前端，并把本轮进程记录在本地 `.runtime` 目录。查看或关闭：
+
+```powershell
+pwsh -File .\scripts\workbench.ps1 status
+pwsh -File .\scripts\workbench.ps1 stop
+```
+
+辅助项目若与工作台放在同一父目录，会自动识别；其他目录结构可复制 `runtime.local.example.json` 为 `runtime.local.json` 后填写路径，或设置 `OPENCLI_ADMIN_PROJECT_DIR`、`VIDEO_JIEXI_PROJECT_DIR`。本地配置不会提交到仓库，缺少任一可选服务时主工作台仍能启动并明确降级。
+
+### 爆款拆解 AI
+
+推荐在“设置 → 通用 AI 模型服务”中配置模型：可自定义厂商名称、接口协议、API 地址、使用者自己的 API Key 和模型名，保存后会自动设为爆款拆解模型。当前支持 OpenAI 兼容协议、Anthropic 原生协议和 Google Gemini 原生协议；DeepSeek、通义、智谱、Moonshot、OpenRouter 及多数中转站通常可使用 OpenAI 兼容协议。密钥只写入本机的 `settings.json`，该文件已被 Git 忽略，不会上传到仓库。
+
+本机已登录的 Codex CLI 仍可作为可选备用，但项目不依赖 ChatGPT/Codex 登录。没有配置任何 AI 服务时，账号采集、热度判断、视频下载和转写仍可用；爆款拆解会明确显示规则降级结果。
 
 1.  **准备 Cookie**: 
     大多数平台需要登录后的 Cookie 信息才能进行操作。请参照 examples 目录下各 `get_xxx_cookie.py` 脚本（例如 get_douyin_cookie.py, get_ks_cookie.py）的说明，运行脚本以生成并保存 Cookie 文件（通常在 `cookies/[PLATFORM]_uploader/account.json`）。
@@ -170,7 +193,7 @@ pwsh -File .\scripts\setup-local.ps1
 
 ## 🐇项目说明
 
-发布账号、发布引擎和发布记录已经收敛在本工作台内；视频解析和对标采集通过 HTTP 能力提供方接入，不绑定个人电脑路径或固定平台。
+对标采集、爆款拆解、作品复盘和视频解析集中在本工作台内；多平台发布保持在独立的 social-auto-upload 项目中。
 
 后续可以在不改变主界面的前提下增加平台适配器、评论分析或其他内容工具。
 
