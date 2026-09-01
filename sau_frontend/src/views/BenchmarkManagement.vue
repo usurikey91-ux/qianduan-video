@@ -165,10 +165,14 @@ const refreshMonitor = async () => {
   monitorError.value = ''
   try {
     const [accountsResponse, worksResponse] = await Promise.all([
-      benchmarkApi.getOpencliMonitorAccounts(),
-      benchmarkApi.getOpencliMonitorWorks()
+      benchmarkApi.getOpencliMonitorAccounts('douyin'),
+      benchmarkApi.getOpencliMonitorWorks('douyin')
     ])
-    monitorAccounts.value = accountsResponse.data || []
+    // The monitor adapter may also return historical/system rows. The page
+    // represents the user's active benchmark set, so hide disabled entries.
+    monitorAccounts.value = (accountsResponse.data || []).filter((account) =>
+      account.platform === 'douyin' && account.collection_enabled !== false
+    )
     monitorWorks.value = worksResponse.data || []
   } catch (error) {
     monitorError.value = error?.message || '采集服务未连接，请先配置并启动采集服务'
