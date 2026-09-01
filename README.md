@@ -4,6 +4,8 @@
 
 项目由两个可替换部分组成：对标采集与热度筛选、视频解析服务。发布使用独立的 social-auto-upload 工具，不嵌入本工作台。
 
+> 本仓库是自媒体内容拆解主工作台。OpenCLI Admin（另一个仓库）只作为可选的对标采集服务；不配置它也可以启动和使用本地复盘、内容拆解等功能。
+
 这个项目适合内容创作者、自媒体运营者和个人团队使用。它不是单纯的上传工具，而是一个可以持续沉淀账号、对标作品和发布结果的可部署运营工作台。
 
 <img src="media/show/tkupload.gif" alt="tiktok show" width="800"/>
@@ -79,6 +81,40 @@
 每个示例脚本展示了如何配置和调用相应的 uploader。
 
 ## 💾安装指南
+
+### Windows 本地使用（推荐）
+
+这是面向普通本机用户的最短路径。项目默认只监听 `127.0.0.1`，不会自动发布到公网。
+
+1. 安装 Python 3.11+、Node.js 18+ 和 Google Chrome/Chromium。
+2. 克隆仓库并进入目录：
+
+   ```powershell
+   git clone https://github.com/usurikey91-ux/zimeiti-qianduan-neirong-chaijie.git
+   cd zimeiti-qianduan-neirong-chaijie
+   ```
+
+3. 初始化本机环境：
+
+   ```powershell
+   pwsh -File .\scripts\setup-local.ps1
+   ```
+
+4. 启动整套工作台：
+
+   ```powershell
+   pwsh -File .\scripts\workbench.ps1 start -OpenBrowser
+   ```
+
+5. 打开 `http://127.0.0.1:5174`。停止服务：
+
+   ```powershell
+   pwsh -File .\scripts\workbench.ps1 stop
+   ```
+
+如果只需要主工作台，也可以分别运行 `python sau_backend.py`（5409）和在 `sau_frontend` 中运行 `npm.cmd run dev`（5174）。端口被占用时先执行 `workbench.ps1 stop`，不要把另一个项目的 Vite 服务复用到 5174。
+
+### 其他系统或手动安装
 
 1.  **克隆项目**:
     ```bash
@@ -176,6 +212,16 @@ pwsh -File .\scripts\workbench.ps1 stop
 推荐在“设置 → 通用 AI 模型服务”中配置模型：可自定义厂商名称、接口协议、API 地址、使用者自己的 API Key 和模型名，保存后会自动设为爆款拆解模型。当前支持 OpenAI 兼容协议、Anthropic 原生协议和 Google Gemini 原生协议；DeepSeek、通义、智谱、Moonshot、OpenRouter 及多数中转站通常可使用 OpenAI 兼容协议。密钥只写入本机的 `settings.json`，该文件已被 Git 忽略，不会上传到仓库。
 
 本机已登录的 Codex CLI 仍可作为可选备用，但项目不依赖 ChatGPT/Codex 登录。没有配置任何 AI 服务时，账号采集、热度判断、视频下载和转写仍可用；爆款拆解会明确显示规则降级结果。
+
+### 爆款判定规则
+
+爆款判定不是和全网账号比较，而是和同一对标账号最近最多 20 条、已有完整公开指标的作品中位数比较：
+
+- `火`（页面显示火焰）：相对倍数 `>= 3.0x`。
+- `超级火`（页面显示特别火）：相对倍数 `>= 5.0x`，并优先进入分析队列。
+- 小于 `3.0x` 的作品只保留在观察数据中，不进入爆款拆解队列。
+
+作品发布不足 7 天、基线不足 20 条或关键公开指标缺失时，不会强行判定为爆款。当前 `3x/5x` 是产品默认规则，不是每个用户单独保存的动态设置；如需调整，应在代码和测试中同步修改。
 
 1.  **准备 Cookie**: 
     大多数平台需要登录后的 Cookie 信息才能进行操作。请参照 examples 目录下各 `get_xxx_cookie.py` 脚本（例如 get_douyin_cookie.py, get_ks_cookie.py）的说明，运行脚本以生成并保存 Cookie 文件（通常在 `cookies/[PLATFORM]_uploader/account.json`）。
