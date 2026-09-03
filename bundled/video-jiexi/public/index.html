@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Jiexi - 本地视频解析</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+      </div>
+      <div>
+        <strong>本地视频解析</strong>
+        <span>yt-dlp + ffmpeg</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="workspace">
+      <div class="intro">
+        <p class="eyebrow">LOCAL MEDIA TOOL</p>
+        <h1>粘贴链接，读取视频。</h1>
+        <p>粘贴链接或整段分享文案，解析和下载都在这台电脑上完成。</p>
+      </div>
+
+      <form class="parse-form" id="parse-form">
+        <div class="input-label-row">
+          <label for="url">链接或分享文案</label>
+          <span class="detected-platform hidden" id="detected-platform"></span>
+        </div>
+        <div class="url-row">
+          <div class="url-field">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 13.4a1.9 1.9 0 0 0 2.7 0l3-3a1.9 1.9 0 1 0-2.7-2.7l-1.2 1.2-1.4-1.4 1.2-1.2a3.9 3.9 0 1 1 5.5 5.5l-3 3a3.9 3.9 0 0 1-5.5 0l1.4-1.4Zm2.8-2.8a1.9 1.9 0 0 0-2.7 0l-3 3a1.9 1.9 0 1 0 2.7 2.7l1.2-1.2 1.4 1.4-1.2 1.2a3.9 3.9 0 0 1-5.5-5.5l3-3a3.9 3.9 0 0 1 5.5 0l-1.4 1.4Z" fill="currentColor"/></svg>
+            <textarea id="url" placeholder="粘贴 https://... 或 APP 复制的整段分享文案" autocomplete="off" required></textarea>
+            <button class="clear-button" id="clear-button" type="button" title="清空" aria-label="清空链接">×</button>
+          </div>
+          <button class="primary-button" id="parse-button" type="submit">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-2.05-4.95L14 10h7V3l-2.64 2.64A8.96 8.96 0 0 0 12 3Z" fill="currentColor"/></svg>
+            <span>解析链接</span>
+          </button>
+        </div>
+        <div class="cookie-options hidden" id="cookie-options">
+          <label for="cookie-browser">抖音登录凭据（可选）</label>
+          <select id="cookie-browser">
+            <option value="" selected>不使用 Cookie</option>
+            <option value="edge">Edge</option>
+            <option value="chrome">Chrome</option>
+            <option value="firefox">Firefox</option>
+          </select>
+        </div>
+        <div class="supported-platforms" aria-label="支持的平台">
+          <div class="supported-heading"><span>SUPPORTED PLATFORMS</span><small>公开链接</small></div>
+          <div class="platform-list">
+            <span class="platform-item"><i class="platform-icon douyin">抖</i>抖音</span>
+            <span class="platform-item"><i class="platform-icon tiktok">♪</i>TikTok</span>
+            <span class="platform-item"><i class="platform-icon bilibili">B</i>哔哩哔哩</span>
+            <span class="platform-item"><i class="platform-icon youtube">▶</i>YouTube</span>
+            <span class="platform-item"><i class="platform-icon xhs">书</i>小红书</span>
+            <span class="platform-item"><i class="platform-icon kuaishou">快</i>快手</span>
+            <span class="platform-item"><i class="platform-icon weibo">微</i>微博</span>
+            <span class="platform-item"><i class="platform-icon x">X</i>X</span>
+            <span class="platform-item"><i class="platform-icon instagram"><img src="/icons/instagram.svg" alt="" aria-hidden="true"></i>Instagram</span>
+          </div>
+        </div>
+        <p class="form-message" id="form-message"></p>
+      </form>
+
+      <div class="loading-panel hidden" id="loading-panel">
+        <div class="spinner"></div>
+        <div><strong>正在读取媒体信息</strong><span>首次解析可能需要几秒钟</span></div>
+      </div>
+
+      <section class="result hidden" id="result">
+        <div class="result-heading">
+          <div><span class="section-index">01</span><h2>解析结果</h2></div>
+          <span class="source-badge" id="source-badge"></span>
+        </div>
+        <div class="media-layout">
+          <div class="poster-wrap">
+            <img id="thumbnail" alt="视频封面">
+            <span class="duration" id="duration"></span>
+          </div>
+          <div class="media-detail">
+            <h3 id="title"></h3>
+            <div class="meta-row">
+              <span id="uploader"></span>
+              <span id="format-count"></span>
+            </div>
+            <div class="format-block" id="format-block">
+              <label for="format">下载画质</label>
+              <div class="select-wrap">
+                <select id="format"></select>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5H7Z" fill="currentColor"/></svg>
+              </div>
+              <p id="format-note">将自动补充最佳音频并合并为 MP4</p>
+            </div>
+            <div class="download-actions">
+              <button class="download-button" id="download-button" data-kind="video" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4h2v9l3.5-3.5 1.4 1.4-5.9 5.9-5.9-5.9 1.4-1.4L11 13V4Zm-5 14h12v2H6v-2Z" fill="currentColor"/></svg>
+                <span id="download-label">下载视频</span>
+              </button>
+              <button class="secondary-button" id="audio-button" data-kind="audio" type="button" title="提取 MP3 音频">MP3 音频</button>
+              <button class="secondary-button" id="cover-button" data-kind="cover" type="button" title="保存视频封面">保存封面</button>
+              <button class="secondary-button next-button" id="next-button" type="button" title="清空当前结果并解析下一个链接">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a7 7 0 1 1-6.65 9.2l1.9-.62A5 5 0 1 0 8.1 8.1L11 11H4V4l2.68 2.68A6.96 6.96 0 0 1 12 5Z" fill="currentColor"/></svg>
+                <span>解析下一个</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="task hidden" id="task-panel">
+        <div class="task-top">
+          <div><span class="section-index">02</span><h2>下载任务</h2></div>
+          <button id="cancel-button" class="icon-button" type="button" title="取消下载" aria-label="取消下载">×</button>
+        </div>
+        <div class="progress-track"><div id="progress-bar"></div></div>
+        <div class="task-status">
+          <strong id="task-state">准备下载</strong>
+          <span id="task-metric"></span>
+        </div>
+        <p id="task-file"></p>
+      </section>
+    </section>
+
+    <aside class="side-panel">
+      <section class="side-section directory-section">
+        <div class="side-title">
+          <div class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5h7l2 2h9v12H3V5Zm2 4v8h14V9H5Z" fill="currentColor"/></svg></div>
+          <div><span>DOWNLOAD LOCATION</span><h2>下载文件的目录</h2></div>
+        </div>
+        <code id="download-dir">正在读取...</code>
+        <p class="disk-free" id="disk-free"></p>
+        <button class="directory-button" id="open-folder-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h7l2 2h9v12H3V5Zm2 4v8h14V9H5Zm4 2h6v2H9v-2Z" fill="currentColor"/></svg>
+          <span>打开下载目录</span>
+        </button>
+        <p class="side-feedback" id="directory-feedback" aria-live="polite"></p>
+      </section>
+    </aside>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
+

@@ -18,6 +18,10 @@ export const ownContentApi = {
     return http.get('/own/douyin/videos', { limit })
   },
 
+  getDouyinOverview: () => {
+    return http.get('/own/douyin/overview')
+  },
+
   previewXiaohongshuImport: (file) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -33,6 +37,10 @@ export const ownContentApi = {
 
   getXiaohongshuWorks: (limit = 100) => {
     return http.get('/own/xiaohongshu/videos', { limit })
+  },
+
+  getXiaohongshuOverview: () => {
+    return http.get('/own/xiaohongshu/overview')
   },
 
   syncDouyin: (accountName = '抖音创作者中心', limit = 20) => {

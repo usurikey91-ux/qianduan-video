@@ -2,12 +2,12 @@
   <div class="idea-radar">
     <div class="page-header">
       <div>
-        <h1>爆款拆解</h1>
-        <p>只处理热度队列里的火作品，结合视频、转写和公开信号，生成可验证的参考性二创。</p>
+        <h1>对标作品事实</h1>
+        <p>只展示对标作品的公开指标、来源链接和原始转写，不进行 AI 分析或文案改写。</p>
       </div>
       <div class="header-actions">
         <el-button type="primary" :loading="loadingVideos" @click="fetchVideos">
-          刷新爆款
+          刷新作品
         </el-button>
       </div>
     </div>
@@ -15,7 +15,7 @@
     <div class="radar-layout">
       <section class="video-panel">
         <div class="panel-title">
-          <span>待拆解爆款作品</span>
+          <span>对标作品列表</span>
           <small>{{ filteredVideos.length }} 条</small>
         </div>
         <div class="filter-row">
@@ -46,7 +46,7 @@
       </section>
 
       <section class="result-panel" v-loading="analyzing">
-        <template v-if="radar">
+        <template v-if="radar && !FACTS_ONLY_MODE">
           <div class="source-bar">
             <div>
               <span class="source-account">{{ radar.source.account_name }}</span>
@@ -195,11 +195,34 @@
           </div>
         </template>
 
+        <div v-else-if="FACTS_ONLY_MODE && selectedVideo" class="facts-only-card">
+          <div class="source-bar">
+            <div>
+              <span class="source-account">{{ selectedVideo.account_name || '对标账号' }}</span>
+              <h2>{{ selectedVideo.title }}</h2>
+            </div>
+            <div class="source-actions">
+              <el-link :href="selectedVideo.video_url" target="_blank" type="primary">打开原作品</el-link>
+            </div>
+          </div>
+          <div class="metric-strip">
+            <div><span>点赞</span><strong>{{ formatNumber(selectedVideo.like_count) }}</strong></div>
+            <div><span>评论</span><strong>{{ formatNumber(selectedVideo.comment_count) }}</strong></div>
+            <div><span>收藏</span><strong>{{ formatNumber(selectedVideo.collect_count) }}</strong></div>
+            <div><span>分享</span><strong>{{ formatNumber(selectedVideo.share_count) }}</strong></div>
+            <div><span>相对倍数</span><strong>{{ selectedVideo.relative_multiple ? `${Number(selectedVideo.relative_multiple).toFixed(1)}x` : '未提供' }}</strong></div>
+          </div>
+          <div v-if="taskState?.cleaned_transcript" class="section-block">
+            <div class="section-label">视频转写文案（事实记录）</div>
+            <div class="transcript-box">{{ taskState.cleaned_transcript }}</div>
+          </div>
+          <el-empty v-else description="暂未采集到转写文案，只展示公开指标" :image-size="90" />
+        </div>
         <div v-else-if="taskState && taskState.status !== 'idle'" class="task-state-card">
           <template v-if="taskState.status === 'failed'">
             <el-result icon="error" title="视频解析失败" :sub-title="taskState.error_message || '请重新解析'">
               <template #extra>
-                <el-button type="primary" @click="retryAnalysis">重新解析</el-button>
+                <span class="facts-only-note">事实采集失败，请稍后刷新作品列表</span>
               </template>
             </el-result>
             <el-alert
@@ -250,7 +273,7 @@
 
         <el-empty
           v-else-if="!analyzing"
-          description="选择一条高赞对标作品，生成观点雷达"
+          description="选择一条对标作品查看公开事实"
           :image-size="110"
         />
       </section>
@@ -271,6 +294,7 @@ const taskState = ref(null)
 const keyword = ref('')
 const loadingVideos = ref(false)
 const analyzing = ref(false)
+const FACTS_ONLY_MODE = true
 const router = useRouter()
 let pollingTimer = null
 let selectionToken = 0
@@ -320,8 +344,8 @@ const fetchVideos = async () => {
       await selectVideo(videos.value[0])
     }
   } catch (error) {
-    console.error('获取观点雷达作品失败:', error)
-    ElMessage.error('获取观点雷达作品失败')
+    console.error('获取对标作品失败:', error)
+    ElMessage.error('获取对标作品失败')
   } finally {
     loadingVideos.value = false
   }
@@ -336,15 +360,12 @@ const selectVideo = async (video) => {
   taskState.value = null
   analyzing.value = true
   try {
-    const res = await benchmarkApi.analyzeIdeaRadarVideo(video.id)
+    const res = await benchmarkApi.getIdeaRadarStatus(video.id)
     if (token !== selectionToken) return
     applyTaskState(res.data)
-    if (!radar.value && !['failed', 'success'].includes(res.data?.status)) {
-      startPolling(video.id, token)
-    }
   } catch (error) {
-    console.error('观点分析失败:', error)
-    ElMessage.error('观点分析失败')
+    console.error('获取作品事实数据失败:', error)
+    ElMessage.error('获取作品事实数据失败')
   } finally {
     analyzing.value = false
   }
@@ -378,24 +399,6 @@ const startPolling = (videoId, token) => {
   }, 2000)
 }
 
-const retryAnalysis = async () => {
-  if (!selectedVideo.value) return
-  const token = ++selectionToken
-  stopPolling()
-  radar.value = null
-  analyzing.value = true
-  try {
-    const res = await benchmarkApi.analyzeIdeaRadarVideo(selectedVideo.value.id, { force: true })
-    if (token !== selectionToken) return
-    applyTaskState(res.data)
-    startPolling(selectedVideo.value.id, token)
-  } catch (error) {
-    ElMessage.error('重新解析失败')
-  } finally {
-    analyzing.value = false
-  }
-}
-
 const openVideoInspector = () => {
   const sourceUrl = radar.value?.source?.video_url || selectedVideo.value?.video_url
   if (!sourceUrl) {
@@ -416,18 +419,20 @@ onBeforeUnmount(stopPolling)
     justify-content: space-between;
     gap: 20px;
     align-items: flex-start;
-    margin-bottom: 18px;
+    margin-bottom: 22px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--sau-line);
 
     h1 {
       margin: 0;
-      font-size: 24px;
+      font-size: 28px;
       font-weight: 650;
-      color: #20232a;
+      color: var(--sau-ink);
     }
 
     p {
       margin: 6px 0 0;
-      color: #6b7280;
+      color: var(--sau-ink-soft);
       font-size: 14px;
     }
   }
@@ -447,9 +452,10 @@ onBeforeUnmount(stopPolling)
 
 .video-panel,
 .result-panel {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  background: rgba(255, 253, 249, 0.94);
+  border: 1px solid var(--sau-line);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(29, 43, 58, 0.055);
 }
 
 .video-panel {
@@ -461,7 +467,7 @@ onBeforeUnmount(stopPolling)
   justify-content: space-between;
   align-items: center;
   font-weight: 650;
-  color: #1f2937;
+  color: var(--sau-ink);
   margin-bottom: 12px;
 
   small {
@@ -477,9 +483,9 @@ onBeforeUnmount(stopPolling)
 .video-item {
   width: 100%;
   text-align: left;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  border-radius: 6px;
+  border: 1px solid var(--sau-line);
+  background: #fffefa;
+  border-radius: 10px;
   padding: 12px;
   margin-bottom: 10px;
   cursor: pointer;
@@ -487,8 +493,8 @@ onBeforeUnmount(stopPolling)
 
   &:hover,
   &.active {
-    border-color: #409eff;
-    background: #f3f8ff;
+    border-color: var(--sau-cinnabar);
+    background: #fbf0eb;
   }
 }
 
@@ -500,18 +506,18 @@ onBeforeUnmount(stopPolling)
   margin-bottom: 8px;
 
   .account {
-    color: #4b5563;
+    color: var(--sau-ink-soft);
   }
 
   .likes {
-    color: #f56c6c;
+    color: var(--sau-cinnabar);
     font-weight: 650;
     white-space: nowrap;
   }
 }
 
 .video-title {
-  color: #111827;
+  color: var(--sau-ink);
   font-size: 14px;
   line-height: 1.55;
 }
@@ -531,7 +537,7 @@ onBeforeUnmount(stopPolling)
   h2 {
     margin: 4px 0 0;
     font-size: 24px;
-    color: #111827;
+    color: var(--sau-ink);
   }
 }
 
@@ -551,26 +557,26 @@ onBeforeUnmount(stopPolling)
 
   > div {
     padding: 10px 12px;
-    border: 1px solid #edf0f4;
-    border-radius: 8px;
-    background: #fafbfc;
+    border: 1px solid var(--sau-line);
+    border-radius: 10px;
+    background: #f8f4ee;
     display: grid;
     gap: 4px;
   }
 
-  span { color: #8a94a6; font-size: 12px; }
-  strong { color: #1f2937; font-size: 16px; }
+  span { color: var(--sau-ink-soft); font-size: 12px; }
+  strong { color: var(--sau-ink); font-size: 16px; }
 }
 
 .source-account {
-  color: #6b7280;
+  color: var(--sau-ink-soft);
   font-size: 13px;
 }
 
 .formula {
   display: inline-flex;
   padding: 8px 12px;
-  background: #111827;
+  background: var(--sau-ink);
   color: #fff;
   border-radius: 6px;
   font-size: 13px;
@@ -581,7 +587,7 @@ onBeforeUnmount(stopPolling)
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #6b7280;
+  color: var(--sau-ink-soft);
   font-size: 13px;
   margin-bottom: 16px;
 }
@@ -589,7 +595,7 @@ onBeforeUnmount(stopPolling)
 .transcript-box {
   white-space: pre-wrap;
   line-height: 1.8;
-  color: #374151;
+  color: var(--sau-ink);
   max-height: 360px;
   overflow: auto;
   padding: 4px 8px 12px;
@@ -600,18 +606,18 @@ onBeforeUnmount(stopPolling)
 }
 
 .breakdown-card {
-  border: 1px solid #dbeafe;
-  background: #f8fbff;
-  border-radius: 8px;
+  border: 1px solid #e5c8be;
+  background: #fff8f3;
+  border-radius: 12px;
   padding: 16px;
 
   h3 {
     margin: 0 0 12px;
-    color: #111827;
+    color: var(--sau-ink);
   }
 
   p {
-    color: #374151;
+    color: var(--sau-ink);
     line-height: 1.7;
   }
 }
@@ -650,20 +656,20 @@ onBeforeUnmount(stopPolling)
   margin-bottom: 14px;
 
   strong {
-    color: #111827;
+    color: var(--sau-ink);
     font-size: 28px;
   }
 }
 
 .progress-stage {
-  color: #111827;
+  color: var(--sau-ink);
   font-size: 20px;
   font-weight: 650;
 }
 
 .progress-message {
   margin-top: 6px;
-  color: #6b7280;
+  color: var(--sau-ink-soft);
   font-size: 14px;
 }
 
@@ -672,19 +678,19 @@ onBeforeUnmount(stopPolling)
   justify-content: space-between;
   gap: 16px;
   margin-top: 10px;
-  color: #6b7280;
+  color: var(--sau-ink-soft);
   font-size: 13px;
 }
 
 .task-log {
   margin-top: 24px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--sau-line);
   padding-top: 16px;
 }
 
 .task-log-title {
   margin-bottom: 10px;
-  color: #374151;
+  color: var(--sau-ink);
   font-size: 14px;
   font-weight: 650;
 }
@@ -706,13 +712,13 @@ onBeforeUnmount(stopPolling)
 
 .log-time,
 .log-percent {
-  color: #9ca3af;
+  color: #9a8f82;
   font-variant-numeric: tabular-nums;
 }
 
 .log-message {
   min-width: 0;
-  color: #374151;
+  color: var(--sau-ink);
   overflow-wrap: anywhere;
 }
 
@@ -723,19 +729,19 @@ onBeforeUnmount(stopPolling)
 .section-label {
   font-size: 13px;
   font-weight: 650;
-  color: #6b7280;
+  color: var(--sau-ink-soft);
   margin-bottom: 8px;
 }
 
 .big-viewpoint {
   font-size: 20px;
   line-height: 1.55;
-  color: #1f2937;
+  color: var(--sau-ink);
   font-weight: 650;
   padding: 16px;
-  background: #f8fafc;
-  border-left: 4px solid #409eff;
-  border-radius: 6px;
+  background: #f8f4ee;
+  border-left: 4px solid var(--sau-cinnabar);
+  border-radius: 10px;
 }
 
 .insight-grid {
@@ -746,8 +752,8 @@ onBeforeUnmount(stopPolling)
 }
 
 .insight-box {
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border: 1px solid var(--sau-line);
+  border-radius: 10px;
   padding: 14px;
 
   ul {
@@ -756,7 +762,7 @@ onBeforeUnmount(stopPolling)
   }
 
   li {
-    color: #374151;
+    color: var(--sau-ink);
     line-height: 1.7;
     margin-bottom: 5px;
   }
@@ -779,14 +785,14 @@ onBeforeUnmount(stopPolling)
 }
 
 .adaptation-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border: 1px solid var(--sau-line);
+  border-radius: 10px;
   padding: 14px;
-  background: #fff;
+  background: #fffefa;
 
   p {
     margin: 8px 0 0;
-    color: #4b5563;
+    color: var(--sau-ink-soft);
     line-height: 1.65;
   }
 }
@@ -796,14 +802,14 @@ onBeforeUnmount(stopPolling)
   align-items: center;
   gap: 10px;
 
-  strong { color: #111827; line-height: 1.5; }
+  strong { color: var(--sau-ink); line-height: 1.5; }
 }
 
 .empty-note {
   padding: 14px;
-  border: 1px dashed #d1d5db;
-  border-radius: 8px;
-  color: #6b7280;
+  border: 1px dashed #cfc3b7;
+  border-radius: 10px;
+  color: var(--sau-ink-soft);
 }
 
 .title-item {
@@ -811,15 +817,15 @@ onBeforeUnmount(stopPolling)
   align-items: flex-start;
   gap: 10px;
   padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid var(--sau-line);
+  border-radius: 10px;
+  background: #fffefa;
 
   span {
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    background: #409eff;
+    background: var(--sau-cinnabar);
     color: #fff;
     display: inline-flex;
     align-items: center;
@@ -829,7 +835,7 @@ onBeforeUnmount(stopPolling)
   }
 
   strong {
-    color: #111827;
+    color: var(--sau-ink);
     line-height: 1.55;
   }
 }
@@ -840,7 +846,7 @@ onBeforeUnmount(stopPolling)
   margin: 0;
   padding: 14px;
   border-radius: 6px;
-  background: #111827;
+  background: var(--sau-ink);
   color: #f9fafb;
   font-family: inherit;
   line-height: 1.7;

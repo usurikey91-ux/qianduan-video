@@ -1,11 +1,18 @@
 <template>
   <div class="agent-models-page">
     <header class="page-header">
-      <div><p class="eyebrow">Workspace Settings</p><h1>设置</h1><p>配置采集服务、视频解析服务和 AI 模型；发布由独立工具负责。</p></div>
+      <div><p class="eyebrow">Workspace Settings</p><h1>设置</h1><p>{{ factsOnlyMode ? '配置采集服务和视频解析服务；当前不启用 AI 分析或文案改写。' : '配置采集服务、视频解析服务和 AI 模型；发布由独立工具负责。' }}</p></div>
       <el-button :icon="Refresh" :loading="loading" @click="loadAll">刷新</el-button>
     </header>
 
-    <section class="settings-section local-ai-section">
+    <section v-if="factsOnlyMode" class="settings-section facts-mode-notice">
+      <div class="section-heading">
+        <div><h2>事实模式已启用</h2><p>AI 分析和文案改写目前不参与流程，已有模型配置仍会保留。</p></div>
+        <el-button @click="showAiSettings = !showAiSettings">{{ showAiSettings ? '收起 AI 配置' : '展开 AI 配置' }}</el-button>
+      </div>
+    </section>
+
+    <section v-if="!factsOnlyMode || showAiSettings" class="settings-section local-ai-section">
       <div class="section-heading">
         <div><h2>本机 Codex AI（可选）</h2><p>复用当前电脑已经登录的 Codex CLI；不启用也不影响通用 AI 模型服务。</p></div>
         <el-tag :type="codexStatus.type" effect="plain">{{ codexStatus.label }}</el-tag>
@@ -24,7 +31,7 @@
       </div>
     </section>
 
-    <section class="settings-section universal-ai-section">
+    <section v-if="!factsOnlyMode || showAiSettings" class="settings-section universal-ai-section">
       <div class="section-heading">
         <div><h2>通用 AI 模型服务</h2><p>可连接不同厂商、中转站或本地模型服务，不依赖 ChatGPT/Codex 登录；连接信息只保存在当前电脑。</p></div>
         <el-tag :type="connectionStatus.type" effect="plain">{{ connectionStatus.label }}</el-tag>
@@ -64,7 +71,7 @@
       <div class="section-actions"><el-button type="primary" :loading="savingIntegrations" @click="saveIntegrations">保存集成配置</el-button><el-button :loading="testingIntegration" @click="testIntegration">检查视频解析服务</el-button></div>
     </section>
 
-    <section class="settings-section">
+    <section v-if="!factsOnlyMode || showAiSettings" class="settings-section">
       <div class="section-heading">
         <div><h2>模型配置</h2><p>上方快捷配置会自动创建模型；这里保留高级手动配置。</p></div>
         <el-button type="primary" :icon="Plus" @click="openEditor()">添加模型</el-button>
@@ -83,7 +90,7 @@
       </el-table>
     </section>
 
-    <section class="settings-section">
+    <section v-if="!factsOnlyMode || showAiSettings" class="settings-section">
       <div class="section-heading"><div><h2>任务模型</h2><p>开始新任务时读取，切换不会改变历史结果。</p></div></div>
       <div class="task-row">
         <div><strong>爆款拆解</strong><span>正文结构、传播机制与内容机会</span></div>
@@ -128,6 +135,7 @@ const loading = ref(false), savingIndependent = ref(false), testingIndependent =
 const discovering = ref(false), savingModel = ref(false), savingTask = ref(false)
 const configuringCodex = ref(false), codexModel = ref('gpt-5.6-sol')
 const testingModelId = ref(''), editorVisible = ref(false), editingId = ref(''), catalogSelection = ref('')
+const factsOnlyMode = ref(false), showAiSettings = ref(false)
 const savingIntegrations = ref(false), testingIntegration = ref(false)
 const models = ref([]), discoveredModels = ref([])
 const taskModels = reactive({ viralAnalysis: '' })
@@ -177,6 +185,7 @@ const loadAll = async () => {
       : { type: 'info', label: '未启用' })
     models.value = configured.data.models || []
     Object.assign(taskModels, configured.data.taskModels || {})
+    factsOnlyMode.value = integrations.data?.factsOnlyMode === true
     Object.assign(integrationForm, integrations.data, { opencliAdminApiToken: '', videoJiexiApiToken: '' })
   } finally { loading.value = false }
 }

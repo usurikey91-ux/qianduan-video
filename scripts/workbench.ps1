@@ -44,10 +44,58 @@ function Wait-Port([int]$Port, [int]$TimeoutSeconds = 30) {
   return 0
 }
 
+function Resolve-Chrome {
+  $candidates = @(
+    $env:CHROME_PATH,
+    $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe' }),
+    $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe' }),
+    $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe' }),
+    $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe' })
+  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+  return $candidates | Select-Object -First 1
+}
+
+function Start-CollectorBrowser([string]$BrowserPath, [string]$ProfileDirectory) {
+  $existingOwner = Get-PortOwner 9222
+  if ($existingOwner) {
+    Write-Host ("[ready] collector-browser already listens on 9222 (PID {0})" -f $existingOwner)
+    return @{ name = 'collector-browser'; port = 9222; ownerPid = $existingOwner; managed = $false }
+  }
+  New-Item -ItemType Directory -Force -Path $RuntimeDir, $ProfileDirectory | Out-Null
+  $arguments = @(
+    '--remote-debugging-port=9222',
+    '--remote-debugging-address=127.0.0.1',
+    "--user-data-dir=$ProfileDirectory",
+    '--no-first-run',
+    '--no-default-browser-check',
+    'about:blank'
+  )
+  $process = Start-Process -FilePath $BrowserPath -ArgumentList $arguments -WindowStyle Minimized -PassThru
+  $owner = Wait-Port 9222 30
+  if (-not $owner) { throw 'The dedicated collector browser failed to expose local CDP port 9222.' }
+  Write-Host ("[started] collector-browser http://127.0.0.1:9222 (PID {0})" -f $owner)
+  return @{ name = 'collector-browser'; port = 9222; ownerPid = $owner; launcherPid = $process.Id; managed = $true }
+}
+
 function Start-ServiceProcess([string]$Name, [int]$Port, [string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory) {
   $existingOwner = Get-PortOwner $Port
   if ($existingOwner) {
     Write-Host ("[ready] {0} already listens on {1} (PID {2})" -f $Name, $Port, $existingOwner)
+    $previousRecord = @(Read-State) | Where-Object {
+      $_.name -eq $Name -and
+      [int]$_.port -eq $Port -and
+      [int]$_.ownerPid -eq $existingOwner -and
+      $_.managed
+    } | Select-Object -First 1
+    if ($previousRecord) {
+      return @{
+        name = $Name
+        port = $Port
+        ownerPid = $existingOwner
+        launcherPid = $previousRecord.launcherPid
+        managed = $true
+      }
+    }
     return @{ name = $Name; port = $Port; ownerPid = $existingOwner; managed = $false }
   }
   New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
@@ -95,6 +143,7 @@ function Show-Status {
     @{ name = 'frontend'; port = 5174 },
     @{ name = 'backend'; port = 5409 },
     @{ name = 'opencli-admin'; port = 8031 },
+    @{ name = 'collector-browser'; port = 9222 },
     @{ name = 'video-jiexi'; port = 4200 }
   )
   foreach ($item in $ports) {
@@ -109,6 +158,18 @@ if ($Action -in @('stop', 'restart')) { Stop-ManagedServices }
 if ($Action -eq 'stop') { Show-Status; exit 0 }
 
 $config = Read-RuntimeConfig
+if ($config.douyinMcpProjectDir -and -not $env:DOUYIN_MCP_PROJECT_DIR) {
+  $env:DOUYIN_MCP_PROJECT_DIR = [IO.Path]::GetFullPath([string]$config.douyinMcpProjectDir)
+}
+if ($config.douyinMcpCliPath -and -not $env:DOUYIN_MCP_CLI_PATH) {
+  $env:DOUYIN_MCP_CLI_PATH = [IO.Path]::GetFullPath([string]$config.douyinMcpCliPath)
+}
+if ($config.opencliPath -and -not $env:OPENCLI_PATH) {
+  $env:OPENCLI_PATH = [IO.Path]::GetFullPath([string]$config.opencliPath)
+}
+if ($config.opencliPath -and -not $env:OPENCLI_BIN) {
+  $env:OPENCLI_BIN = [IO.Path]::GetFullPath([string]$config.opencliPath)
+}
 $opencliRoot = Resolve-ServiceRoot $config.opencliAdminProjectDir 'OPENCLI_ADMIN_PROJECT_DIR' @('opencli-admin', '自媒体内容拆解') 'backend\main.py'
 $videoRoot = Resolve-ServiceRoot $config.videoJiexiProjectDir 'VIDEO_JIEXI_PROJECT_DIR' @('video-jiexi') 'server.js'
 $backendPython = @(
@@ -117,9 +178,24 @@ $backendPython = @(
 ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (-not $backendPython) { throw 'Workbench Python environment is missing. Run scripts\setup-local.ps1 first.' }
 if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot 'sau_frontend\node_modules'))) { throw 'Frontend dependencies are missing. Run npm.cmd install in sau_frontend.' }
+if (-not $env:YTDLP_PATH) {
+  $configuredYtDlp = if ($config.ytDlpPath) { [IO.Path]::GetFullPath([string]$config.ytDlpPath) } else { Join-Path (Split-Path -Parent $backendPython) 'yt-dlp.exe' }
+  if (Test-Path -LiteralPath $configuredYtDlp) { $env:YTDLP_PATH = $configuredYtDlp }
+}
+if ($config.videoJiexiDownloadDir -and -not $env:DOWNLOAD_DIR) {
+  $env:DOWNLOAD_DIR = [IO.Path]::GetFullPath([string]$config.videoJiexiDownloadDir)
+}
 
 $services = @()
 try {
+  if ($opencliRoot) {
+    $chromePath = Resolve-Chrome
+    if (-not $chromePath) { throw 'Google Chrome or Microsoft Edge is required for platform collection.' }
+    $collectorProfile = if ($config.collectorBrowserProfileDir) {
+      [IO.Path]::GetFullPath([string]$config.collectorBrowserProfileDir)
+    } else { Join-Path $RuntimeDir 'login-profiles\opencli-monitor' }
+    $services += Start-CollectorBrowser $chromePath $collectorProfile
+  }
   if ($videoRoot) {
     $services += Start-ServiceProcess 'video-jiexi' 4200 'cmd.exe' @('/d', '/c', 'npm.cmd', 'start') $videoRoot
   } else { Write-Host '[optional] video-jiexi project not found; video parsing will show a clear unavailable state.' }

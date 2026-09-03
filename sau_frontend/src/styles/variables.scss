@@ -1,26 +1,26 @@
 // 颜色变量
-$primary-color: #409eff;
-$success-color: #67c23a;
-$warning-color: #e6a23c;
-$danger-color: #f56c6c;
-$info-color: #909399;
+$primary-color: #c54b3c;
+$success-color: #4f7d68;
+$warning-color: #c58a3a;
+$danger-color: #b6463c;
+$info-color: #6f7b86;
 
 // 文字颜色
-$text-primary: #303133;
-$text-regular: #606266;
-$text-secondary: #909399;
-$text-placeholder: #c0c4cc;
+$text-primary: #1d2b3a;
+$text-regular: #4f5e6d;
+$text-secondary: #7b8792;
+$text-placeholder: #a9b0b6;
 
 // 边框颜色
-$border-base: #dcdfe6;
-$border-light: #e4e7ed;
-$border-lighter: #ebeef5;
-$border-extra-light: #f2f6fc;
+$border-base: #d8d3ca;
+$border-light: #e2ddd5;
+$border-lighter: #ebe7e0;
+$border-extra-light: #f4f1eb;
 
 // 背景颜色
-$bg-color: #ffffff;
-$bg-color-page: #f2f3f5;
-$bg-color-overlay: #ffffff;
+$bg-color: #fffdf9;
+$bg-color-page: #f3efe8;
+$bg-color-overlay: #fffdf9;
 
 // 字体大小
 $font-size-extra-large: 20px;
@@ -38,15 +38,15 @@ $spacing-lg: 24px;
 $spacing-xl: 32px;
 
 // 圆角
-$border-radius-base: 4px;
-$border-radius-small: 2px;
-$border-radius-round: 20px;
+$border-radius-base: 8px;
+$border-radius-small: 5px;
+$border-radius-round: 999px;
 $border-radius-circle: 50%;
 
 // 阴影
-$box-shadow-base: 0 2px 4px rgba(0, 0, 0, 0.12), 0 0 6px rgba(0, 0, 0, 0.04);
-$box-shadow-dark: 0 2px 4px rgba(0, 0, 0, 0.12), 0 0 6px rgba(0, 0, 0, 0.12);
-$box-shadow-light: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+$box-shadow-base: 0 8px 24px rgba(29, 43, 58, 0.06);
+$box-shadow-dark: 0 14px 34px rgba(29, 43, 58, 0.14);
+$box-shadow-light: 0 4px 14px rgba(29, 43, 58, 0.08);
 
 // 层级
 $z-index-normal: 1;

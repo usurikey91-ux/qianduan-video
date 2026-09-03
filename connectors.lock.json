@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "douyinMcp": {
+    "repository": "https://github.com/Kuhakucai/douyin-mcp.git",
+    "commit": "53c888a5e1d83ea70978e71432ad8774707d69b7",
+    "patch": "third_party/patches/douyin-mcp-53c888a.patch",
+    "license": "AGPL-3.0-only"
+  },
+  "opencliAdmin": {
+    "repository": "https://github.com/usurikey91-ux/opencli-admin.git",
+    "commit": "b056380ef0b1f227dc5881b84bc422b94a231f9b",
+    "patch": "third_party/patches/opencli-admin-b056380.patch",
+    "bootstrapPatch": "third_party/patches/opencli-admin-bootstrap.patch",
+    "license": "Apache-2.0"
+  },
+  "opencli": {
+    "package": "@jackwener/opencli@1.8.6",
+    "license": "Apache-2.0"
+  },
+  "videoJiexi": {
+    "bundledPath": "bundled/video-jiexi",
+    "version": 2
+  }
+}

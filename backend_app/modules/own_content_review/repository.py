@@ -1,9 +1,10 @@
 import json
 import sqlite3
+from contextlib import closing
 
 
 def ensure_tables(db_path):
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS douyin_own_accounts (
@@ -53,12 +54,21 @@ def ensure_tables(db_path):
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS douyin_own_account_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            overview_json TEXT NOT NULL DEFAULT '{}',
+            period TEXT NOT NULL DEFAULT '7d',
+            captured_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
         conn.commit()
 
 
 def upsert_account(db_path, account_name):
     ensure_tables(db_path)
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         cursor.execute("""
         INSERT INTO douyin_own_accounts (name)
@@ -78,7 +88,7 @@ def save_import(db_path, rows, account_name, source_key_fn):
     account_id = upsert_account(db_path, account_name)
     inserted = 0
     updated = 0
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         for item in rows:
             source_key = source_key_fn(item)
@@ -149,13 +159,53 @@ def save_import(db_path, rows, account_name, source_key_fn):
     return {"account_id": account_id, "inserted": inserted, "updated": updated, "total": len(rows)}
 
 
+def save_account_snapshot(db_path, account_id, overview):
+    ensure_tables(db_path)
+    payload = overview if isinstance(overview, dict) else {}
+    with closing(sqlite3.connect(db_path)) as conn:
+        cursor = conn.execute("""
+        INSERT INTO douyin_own_account_snapshots
+            (account_id, overview_json, period, captured_at)
+        VALUES (?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+        """, (
+            account_id,
+            json.dumps(payload, ensure_ascii=False),
+            payload.get("period") or "7d",
+            payload.get("captured_at"),
+        ))
+        conn.commit()
+        return cursor.lastrowid
+
+
+def get_latest_account_snapshot(db_path):
+    ensure_tables(db_path)
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("""
+        SELECT s.*, a.name AS account_name
+        FROM douyin_own_account_snapshots s
+        LEFT JOIN douyin_own_accounts a ON a.id = s.account_id
+        ORDER BY s.captured_at DESC, s.id DESC
+        LIMIT 1
+        """).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    try:
+        overview = json.loads(result.pop("overview_json") or "{}")
+    except (TypeError, ValueError):
+        overview = {}
+    result.update(overview)
+    return result
+
+
 def list_videos(db_path, limit=100):
     ensure_tables(db_path)
     try:
         limit = max(1, min(int(limit), 500))
     except Exception:
         limit = 100
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute("""
         SELECT
@@ -170,4 +220,14 @@ def list_videos(db_path, limit=100):
         ORDER BY COALESCE(v.published_at, v.created_at) DESC, v.id DESC
         LIMIT ?
         """, (limit,)).fetchall()
-    return [dict(row) for row in rows]
+    result = []
+    for row in rows:
+        item = dict(row)
+        try:
+            raw = json.loads(item.get("raw_data") or "{}")
+        except (TypeError, ValueError):
+            raw = {}
+        item["official_metric_sections"] = raw.get("official_metric_sections") or []
+        item["metric_quality"] = raw.get("metric_quality")
+        result.append(item)
+    return result

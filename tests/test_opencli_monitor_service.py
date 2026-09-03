@@ -71,6 +71,62 @@ class OpenCLIAdminServiceTests(unittest.TestCase):
         self.assertEqual("12345", external_id)
         self.assertEqual("https://space.bilibili.com/12345", profile_url)
 
+    def test_parses_kuaishou_profile_reference(self):
+        external_id, profile_url = service.parse_account_reference(
+            "kuaishou", "https://www.kuaishou.com/profile/3xk46q9cdnvgife"
+        )
+        self.assertEqual("3xk46q9cdnvgife", external_id)
+        self.assertEqual(
+            "https://www.kuaishou.com/profile/3xk46q9cdnvgife", profile_url
+        )
+
+    def test_parses_kuaishou_live_profile_reference(self):
+        external_id, profile_url = service.parse_account_reference(
+            "kuaishou", "https://live.kuaishou.com/u/3x9xiuemw8tcje9"
+        )
+        self.assertEqual("3x9xiuemw8tcje9", external_id)
+        self.assertEqual(
+            "https://www.kuaishou.com/profile/3x9xiuemw8tcje9", profile_url
+        )
+
+    def test_parses_kuaishou_link_embedded_in_share_text(self):
+        external_id, _ = service.parse_account_reference(
+            "kuaishou",
+            "打开快手看看TA的主页 https://live.kuaishou.com/u/3x9xiuemw8tcje9 复制此消息",
+        )
+        self.assertEqual("3x9xiuemw8tcje9", external_id)
+
+    @patch("backend_app.modules.opencli_monitor.service.urlopen")
+    def test_parses_bilibili_short_link_embedded_in_share_text(self, mocked_urlopen):
+        mocked_urlopen.return_value = _RedirectResponse(
+            "https://space.bilibili.com/256331653"
+        )
+        external_id, profile_url = service.parse_account_reference(
+            "bilibili", "阿杰薅羊毛的个人空间 https://b23.tv/example"
+        )
+        self.assertEqual("256331653", external_id)
+        self.assertEqual("https://space.bilibili.com/256331653", profile_url)
+
+    @patch("backend_app.modules.opencli_monitor.service.urlopen")
+    def test_parses_xiaohongshu_short_link_embedded_in_share_text(self, mocked_urlopen):
+        mocked_urlopen.return_value = _RedirectResponse(
+            "https://www.xiaohongshu.com/user/profile/5f751a3a000000000101fb49"
+        )
+        external_id, profile_url = service.parse_account_reference(
+            "xiaohongshu", "点击链接查看主页>> https://xhslink.cn/o/example"
+        )
+        self.assertEqual("5f751a3a000000000101fb49", external_id)
+        self.assertEqual(
+            "https://www.xiaohongshu.com/user/profile/5f751a3a000000000101fb49",
+            profile_url,
+        )
+
+    def test_rejects_non_profile_kuaishou_reference(self):
+        with self.assertRaisesRegex(ValueError, "账号主页"):
+            service.parse_account_reference(
+                "kuaishou", "https://www.kuaishou.com/short-video/example"
+            )
+
     def test_generic_account_binding_sends_platform(self):
         with patch("backend_app.modules.opencli_monitor.service._request") as request:
             request.return_value = {"created": True}
@@ -83,6 +139,28 @@ class OpenCLIAdminServiceTests(unittest.TestCase):
         payload = request.call_args.kwargs["payload"]
         self.assertEqual("bilibili", payload["platform"])
         self.assertEqual("12345", payload["external_account_id"])
+
+    @patch("backend_app.modules.opencli_monitor.service._request")
+    def test_remove_account_forwards_permanent_delete(self, request):
+        request.return_value = {"purged": True}
+        service.remove_account("account-id")
+        request.assert_called_once_with(
+            "DELETE",
+            "/integrations/sunbird/accounts/account-id",
+            settings=None,
+        )
+
+    @patch("backend_app.modules.opencli_monitor.service._request")
+    def test_update_account_name_forwards_patch(self, request):
+        request.return_value = {"display_name": "自定义昵称"}
+        result = service.update_account_name("account-id", " 自定义昵称 ")
+        self.assertEqual("自定义昵称", result["display_name"])
+        request.assert_called_once_with(
+            "PATCH",
+            "/integrations/sunbird/accounts/account-id",
+            payload={"display_name": "自定义昵称"},
+            settings=None,
+        )
 
     @patch("backend_app.modules.opencli_monitor.service.urlopen")
     def test_bind_calls_auxiliary_service(self, mocked_urlopen):
