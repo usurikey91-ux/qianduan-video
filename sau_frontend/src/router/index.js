@@ -4,6 +4,7 @@ import About from '../views/About.vue'
 import BenchmarkManagement from '../views/BenchmarkManagement.vue'
 import IdeaRadar from '../views/IdeaRadar.vue'
 import OwnContentReview from '../views/OwnContentReview.vue'
+import PlatformConnections from '../views/PlatformConnections.vue'
 import AgentModels from '../views/AgentModels.vue'
 import VideoInspector from '../views/VideoInspector.vue'
 
@@ -32,6 +33,11 @@ const routes = [
     path: '/idea-radar',
     name: 'IdeaRadar',
     component: IdeaRadar
+  },
+  {
+    path: '/platform-connections',
+    name: 'PlatformConnections',
+    component: PlatformConnections
   },
   {
     path: '/own-content-review',

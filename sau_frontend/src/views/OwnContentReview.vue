@@ -3,7 +3,8 @@
     <div class="page-header">
       <div>
         <h1>作品复盘</h1>
-        <p>只读取官方或平台连接器实际返回的数据；表现不好的作品直接忽略。</p>
+        <p>只读取官方或平台连接器实际返回的数据，用中位数、最高值和作品对比做事实复盘。</p>
+        <ProjectReferences context="review" />
       </div>
         <div class="page-actions">
           <el-button type="primary" :loading="syncing" @click="syncWorks">同步平台数据</el-button>
@@ -22,9 +23,12 @@
           <strong>{{ currentSource.label }}</strong>
           <span class="source-connector">数据源：{{ currentSource.connector }}</span>
         </div>
-        <el-tag :type="currentSource.status === 'connected' ? 'success' : 'info'" effect="plain">
-          {{ currentSource.status === 'connected' ? '已连接' : currentSource.status === 'sync_available' ? '可直接同步' : '文件导入模式' }}
-        </el-tag>
+        <div class="source-status-actions">
+          <el-tag :type="currentSource.status === 'connected' ? 'success' : 'info'" effect="plain">
+            {{ currentSource.status === 'connected' ? '已连接' : currentSource.status === 'sync_available' ? '可直接同步' : '文件导入模式' }}
+          </el-tag>
+          <el-button size="small" plain @click="router.push('/platform-connections')">管理账号连接</el-button>
+        </div>
       </div>
       <p v-if="currentSource?.note" class="source-note">{{ currentSource.note }}</p>
       <div v-if="currentSource?.supports?.length" class="source-fields">
@@ -62,10 +66,126 @@
       </div>
     </el-card>
 
+    <el-card v-if="activePlatform === 'douyin' && accountOverview" shadow="never" class="account-overview-card douyin-private-card">
+      <template #header>
+        <div class="card-header">
+          <div>
+            <strong>抖音后台专属数据</strong>
+            <div class="muted">已登录创作者账号 · 近7天 · 更新于 {{ accountOverview.captured_at || '-' }}</div>
+          </div>
+          <el-tag type="success" effect="plain">仅自己的账号可见</el-tag>
+        </div>
+      </template>
+      <div class="private-data-layout">
+        <section class="private-data-section">
+          <div class="private-section-heading">
+            <div>
+              <strong>账号流量入口</strong>
+              <small>平台当前实际返回的搜索、主页与分享数据</small>
+            </div>
+          </div>
+          <div v-if="accountOverview.traffic_sources?.length" class="private-metric-grid">
+            <div v-for="item in accountOverview.traffic_sources" :key="item.key || item.label" class="private-metric">
+              <span>{{ item.label }}</span>
+              <strong>{{ formatMetric(item.value) }}</strong>
+              <div v-if="metricTrendValues(item).length" class="trend-bars compact" :title="metricTrendValues(item).join(' → ')">
+                <i v-for="(value, index) in metricTrendValues(item)" :key="index" :style="{ height: `${trendHeight(metricTrendValues(item), value)}%` }" />
+              </div>
+            </div>
+          </div>
+          <el-alert v-else title="本次同步未返回账号流量入口数据" type="info" :closable="false" show-icon />
+        </section>
+
+        <section class="private-data-section">
+          <div class="private-section-heading">
+            <div>
+              <strong>粉丝数据</strong>
+              <small>总粉丝、新增、净增、取关与回访</small>
+            </div>
+          </div>
+          <div v-if="accountOverview.fan_metrics?.length" class="private-metric-grid">
+            <div v-for="item in accountOverview.fan_metrics" :key="item.key || item.label" class="private-metric">
+              <span>{{ item.label }}</span>
+              <strong>{{ formatMetric(item.value) }}</strong>
+              <div v-if="metricTrendValues(item).length" class="trend-bars compact" :title="metricTrendValues(item).join(' → ')">
+                <i v-for="(value, index) in metricTrendValues(item)" :key="index" :style="{ height: `${trendHeight(metricTrendValues(item), value)}%` }" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="private-data-section portrait-section">
+          <div class="private-section-heading">
+            <div>
+              <strong>用户画像</strong>
+              <small>性别、年龄、地域等以平台权限为准</small>
+            </div>
+          </div>
+          <div v-if="accountOverview.audience_profile?.length" class="private-metric-grid">
+            <div v-for="item in accountOverview.audience_profile" :key="item.label" class="private-metric">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+          <el-alert v-else :title="accountOverview.audience_profile_note || '抖音本次未返回用户画像'" type="info" :closable="false" show-icon />
+        </section>
+      </div>
+    </el-card>
+
+    <el-card v-if="activePlatform === 'xiaohongshu' && accountOverview" shadow="never" class="account-overview-card">
+      <template #header>
+        <div class="card-header">
+          <div>
+            <strong>小红书账号官方概览</strong>
+            <div v-if="accountOverview.account_name" class="current-account">当前账号：{{ accountOverview.account_name }}</div>
+            <div class="muted">近30天创作者中心数据 · 更新于 {{ accountOverview.captured_at || '-' }}</div>
+          </div>
+        </div>
+      </template>
+      <div v-if="accountOverview.stats?.length" class="account-stats-grid">
+        <div v-for="stat in accountOverview.stats" :key="stat.label" class="account-stat">
+          <span>{{ stat.label }}</span>
+          <strong>{{ formatMetric(stat.total) }}</strong>
+          <div v-if="stat.trend?.length" class="trend-bars" :title="stat.trend.join(' → ')">
+            <i v-for="(value, index) in stat.trend" :key="index" :style="{ height: `${trendHeight(stat.trend, value)}%` }" />
+          </div>
+          <small v-else>平台未返回趋势</small>
+        </div>
+      </div>
+    </el-card>
+
+    <el-card v-if="works.length" shadow="never" class="fact-review-card">
+      <template #header>
+        <div class="card-header">
+          <div>
+            <strong>事实复盘概览</strong>
+            <div class="muted">按当前 {{ works.length }} 条作品即时计算，不调用 AI，不推测平台未返回的数据。</div>
+          </div>
+        </div>
+      </template>
+      <div class="fact-grid">
+        <el-statistic title="作品数量" :value="works.length" />
+        <el-statistic :title="`中位${reviewOverview.primaryLabel}`" :value="reviewOverview.primaryMedian" group-separator="," />
+        <el-statistic :title="`最高${reviewOverview.primaryLabel}`" :value="reviewOverview.primaryMaximum" group-separator="," />
+        <el-statistic title="中位互动数" :value="reviewOverview.interactionMedian" group-separator="," />
+      </div>
+      <div v-if="reviewOverview.topWork" class="top-work-line">
+        <span>当前最高{{ reviewOverview.primaryLabel }}作品</span>
+        <el-link v-if="reviewOverview.topWork.video_url" :href="reviewOverview.topWork.video_url" target="_blank" type="primary">
+          {{ reviewOverview.topWork.title || '未命名作品' }}
+        </el-link>
+        <span v-else class="top-work-title">{{ reviewOverview.topWork.title || '未命名作品' }}</span>
+        <strong>{{ formatMetric(reviewOverview.primaryMaximum) }}</strong>
+      </div>
+    </el-card>
+
     <el-card shadow="never" class="works-card">
       <template #header>
         <div class="card-header">
-          <span>{{ activePlatform === 'douyin' ? '抖音作品数据' : '小红书作品数据' }}</span>
+          <div>
+            <span>{{ activePlatform === 'douyin' ? '抖音作品数据' : '小红书作品数据' }}</span>
+            <div v-if="activePlatform === 'xiaohongshu' && accountOverview?.account_name" class="muted">当前账号：{{ accountOverview.account_name }}</div>
+          </div>
           <div class="card-header-actions">
             <span class="muted">共 {{ works.length }} 条 · 仅展示实际返回字段</span>
             <el-button v-if="activePlatform === 'douyin'" size="small" type="primary" plain :disabled="selectedWorks.length < 2" @click="compareSelected">对比所选作品</el-button>
@@ -87,12 +207,12 @@
         <el-table-column v-if="showMetric('two_sec_bounce_rate')" label="2秒跳出" width="105" sortable prop="two_sec_bounce_rate"><template #default="scope">{{ formatPercent(scope.row.two_sec_bounce_rate) }}</template></el-table-column>
         <el-table-column v-if="showMetric('follower_delta')" label="涨粉" width="90" sortable prop="follower_delta" />
         <el-table-column label="数据时间" width="170"><template #default="scope">{{ scope.row.updated_at || scope.row.created_at || '-' }}</template></el-table-column>
-        <el-table-column v-if="activePlatform === 'douyin'" label="操作" width="90" fixed="right"><template #default="scope"><el-button size="small" link type="primary" @click="openDetails(scope.row)">查看详情</el-button></template></el-table-column>
+        <el-table-column label="操作" width="90" fixed="right"><template #default="scope"><el-button size="small" link type="primary" @click="openDetails(scope.row)">查看详情</el-button></template></el-table-column>
       </el-table>
       <el-empty v-if="!loadingWorks && works.length === 0" :description="`暂无${activePlatform === 'douyin' ? '抖音' : '小红书'}作品数据`" />
     </el-card>
 
-    <el-dialog v-model="detailVisible" title="抖音作品详情" width="760px">
+    <el-dialog v-model="detailVisible" :title="activePlatform === 'douyin' ? '抖音作品详情' : '小红书笔记详情'" width="760px">
       <template v-if="detailWork">
         <div class="detail-title">{{ detailWork.title || '未命名作品' }}</div>
         <div class="detail-meta">发布时间：{{ detailWork.published_at || '-' }} · 数据时间：{{ detailWork.updated_at || detailWork.created_at || '-' }}</div>
@@ -103,6 +223,22 @@
             <strong>{{ formatMetric(detailWork[metric.key], metric.kind) }}</strong>
           </div>
         </div>
+        <div v-if="detailWork.official_metric_sections?.length" class="official-sections">
+          <div class="official-heading">
+            <strong>{{ activePlatform === 'douyin' ? '抖音后台专属数据' : '平台官方扩展数据' }}</strong>
+            <span>仅展示本次同步实际返回的字段</span>
+          </div>
+          <section v-for="section in detailWork.official_metric_sections" :key="section.label" class="official-section">
+            <h4>{{ section.label }}</h4>
+            <div class="official-grid">
+              <div v-for="item in section.items" :key="item.label" class="official-item">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
+          </section>
+        </div>
+        <el-alert v-else :title="activePlatform === 'douyin' ? '本条作品暂未返回流量来源或观众构成等扩展指标' : '本条笔记的观看来源或观众画像仍在平台统计中'" type="info" :closable="false" show-icon />
         <el-alert v-if="detailWork.notes" title="采集备注" :description="detailWork.notes" type="info" :closable="false" />
       </template>
     </el-dialog>
@@ -122,10 +258,17 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 import { ownContentApi } from '@/api/ownContent'
+import ProjectReferences from '@/components/ProjectReferences.vue'
 
-const activePlatform = ref('douyin')
-const accountName = ref('我的账号')
+const route = useRoute()
+const router = useRouter()
+const requestedPlatform = ['douyin', 'xiaohongshu'].includes(String(route.query.platform))
+  ? String(route.query.platform)
+  : 'douyin'
+const activePlatform = ref(requestedPlatform)
+const accountName = ref(requestedPlatform === 'douyin' ? '抖音创作者中心' : '我的小红书账号')
 const selectedFile = ref(null)
 const previewData = ref(null)
 const importResult = ref(null)
@@ -139,8 +282,43 @@ const detailVisible = ref(false)
 const detailWork = ref(null)
 const compareVisible = ref(false)
 const sources = ref({})
+const accountOverview = ref(null)
 const currentSource = computed(() => sources.value[activePlatform.value])
 const canImport = computed(() => Boolean(selectedFile.value && previewData.value?.valid_count > 0))
+
+const numberValue = (value) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+const medianValue = (values) => {
+  const sorted = values.filter((value) => value !== null).sort((a, b) => a - b)
+  if (!sorted.length) return 0
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2)
+}
+const reviewOverview = computed(() => {
+  const hasPlay = works.value.some((item) => numberValue(item.play_count) !== null)
+  const primaryKey = hasPlay ? 'play_count' : 'like_count'
+  const primaryLabel = hasPlay ? '播放' : '点赞'
+  const primaryValues = works.value.map((item) => numberValue(item[primaryKey]))
+  const topWork = works.value.reduce((best, item) => {
+    if (!best) return item
+    return (numberValue(item[primaryKey]) || 0) > (numberValue(best[primaryKey]) || 0) ? item : best
+  }, null)
+  const interactions = works.value.map((item) => {
+    const values = ['like_count', 'collect_count', 'comment_count', 'share_count']
+      .map((key) => numberValue(item[key]))
+      .filter((value) => value !== null)
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : null
+  })
+  return {
+    primaryLabel,
+    primaryMedian: medianValue(primaryValues),
+    primaryMaximum: Math.max(0, ...primaryValues.filter((value) => value !== null)),
+    interactionMedian: medianValue(interactions),
+    topWork
+  }
+})
 
 const handleFileChange = (uploadFile) => { selectedFile.value = uploadFile.raw; previewData.value = null; importResult.value = null }
 
@@ -175,7 +353,21 @@ const fetchWorks = async () => {
     const api = activePlatform.value === 'douyin' ? ownContentApi.getDouyinWorks : ownContentApi.getXiaohongshuWorks
     const response = await api(200)
     works.value = response.data || []
+    await fetchAccountOverview()
   } finally { loadingWorks.value = false }
+}
+
+const fetchAccountOverview = async () => {
+  try {
+    const api = activePlatform.value === 'douyin'
+      ? ownContentApi.getDouyinOverview
+      : ownContentApi.getXiaohongshuOverview
+    const response = await api()
+    accountOverview.value = response.data || null
+  } catch (error) {
+    accountOverview.value = null
+    console.warn('读取小红书账号概览失败', error)
+  }
 }
 
 const handlePlatformChange = async () => {
@@ -195,7 +387,10 @@ const syncWorks = async () => {
     const api = isDouyin ? ownContentApi.syncDouyin : ownContentApi.syncXiaohongshu
     const response = await api(accountName.value.trim() || defaultName, 20)
     importResult.value = response.data
-    ElMessage.success(`同步完成：新增 ${response.data?.inserted || 0} 条，更新 ${response.data?.updated || 0} 条`)
+    const warningCount = response.data?.warnings?.length || 0
+    const message = `同步完成：新增 ${response.data?.inserted || 0} 条，更新 ${response.data?.updated || 0} 条`
+    if (warningCount) ElMessage.warning(`${message}；${response.data.warnings.join('；')}`)
+    else ElMessage.success(message)
     await fetchWorks()
   } finally { syncing.value = false }
 }
@@ -234,6 +429,14 @@ const formatMetric = (value, kind = 'number') => {
   if (kind === 'seconds') return `${Number(value).toFixed(1)} 秒`
   return Number.isFinite(Number(value)) ? Number(value).toLocaleString() : String(value)
 }
+const trendHeight = (values, value) => {
+  const maximum = Math.max(0, ...values.map((item) => Number(item) || 0))
+  if (!maximum) return 4
+  return Math.max(4, Math.round(((Number(value) || 0) / maximum) * 100))
+}
+const metricTrendValues = (item) => (item?.trend || [])
+  .map((point) => numberValue(point?.value ?? point?.count))
+  .filter((value) => value !== null)
 const shortTitle = (title) => {
   const text = String(title || '未命名作品')
   return text.length > 20 ? `${text.slice(0, 20)}…` : text
@@ -251,29 +454,64 @@ onMounted(async () => { await loadSources(); await fetchWorks() })
 
 <style lang="scss" scoped>
 .own-content-review {
-  .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+  .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--sau-line); }
   .page-actions { display: flex; gap: 10px; }
-  .page-header h1 { margin: 0 0 6px; font-size: 24px; font-weight: 700; color: #1f2937; }
-  .page-header p { margin: 0; color: #6b7280; font-size: 14px; }
-  .platform-card, .works-card { margin-bottom: 18px; }
-  .source-status { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; }
+  .page-header h1 { margin: 0 0 6px; font-size: 28px; font-weight: 650; color: var(--sau-ink); letter-spacing: -0.02em; }
+  .page-header p { margin: 0; color: var(--sau-ink-soft); font-size: 14px; }
+  .platform-card, .account-overview-card, .fact-review-card, .works-card { margin-bottom: 18px; }
+  .source-status { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #f8f4ee; border: 1px solid var(--sau-line); border-radius: 10px; }
+  .source-status-actions { display: flex; align-items: center; gap: 10px; }
   .source-connector { margin-left: 12px; color: #6b7280; font-size: 12px; }
   .source-note { margin: 9px 0 14px; color: #6b7280; font-size: 13px; }
   .source-fields { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
   .source-fields-label { margin-right: 4px; color: #6b7280; font-size: 13px; }
   .import-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
   .account-input { width: 180px; }
-  .file-name, .muted { color: #6b7280; font-size: 13px; }
+  .file-name, .muted { color: var(--sau-ink-soft); font-size: 13px; }
   .result-alert, .preview-block { margin-top: 16px; }
   .preview-summary { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .fact-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; }
+  .top-work-line { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 14px 16px 0; border-top: 1px solid var(--sau-line); color: var(--sau-ink-soft); font-size: 13px; }
+  .top-work-line .el-link { min-width: 0; max-width: 620px; }
+  .top-work-title { overflow: hidden; max-width: 620px; color: #303133; text-overflow: ellipsis; white-space: nowrap; }
   .card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .card-header-actions { display: flex; align-items: center; gap: 12px; }
-  .detail-title { font-size: 18px; font-weight: 600; color: #1f2937; margin-bottom: 8px; }
+  .detail-title { font-size: 20px; font-weight: 650; color: var(--sau-ink); margin-bottom: 8px; }
   .detail-meta, .compare-note { color: #6b7280; font-size: 13px; margin-bottom: 12px; }
   .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; margin: 18px 0; }
-  .metric-item { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #f8fafc; }
+  .metric-item { border: 1px solid var(--sau-line); border-radius: 10px; padding: 13px; background: #f8f4ee; }
   .metric-item span { display: block; color: #6b7280; font-size: 12px; margin-bottom: 6px; }
-  .metric-item strong { color: #111827; font-size: 18px; }
-  @media (max-width: 760px) { .card-header, .card-header-actions { align-items: flex-start; flex-direction: column; } .metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } }
+  .metric-item strong { color: var(--sau-ink); font-size: 18px; }
+  .official-sections { margin: 4px 0 18px; padding-top: 16px; border-top: 1px solid #ebeef5; }
+  .official-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .official-heading span { color: #909399; font-size: 12px; }
+  .official-section h4 { margin: 16px 0 10px; color: #303133; font-size: 14px; }
+  .official-grid { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)); gap: 10px; }
+  .official-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--sau-line); border-radius: 10px; background: #fffefa; }
+  .official-item span { color: #606266; font-size: 13px; }
+  .official-item strong { color: var(--sau-ink); font-size: 15px; }
+  .current-account { margin-top: 5px; color: var(--sau-ink); font-size: 14px; font-weight: 600; }
+  .private-data-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .private-data-section { min-width: 0; padding: 16px; border: 1px solid var(--sau-line); border-radius: 14px; background: #fffefa; }
+  .portrait-section { grid-column: 1 / -1; }
+  .private-section-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+  .private-section-heading strong { display: block; color: var(--sau-ink); font-size: 15px; }
+  .private-section-heading small { display: block; margin-top: 4px; color: var(--sau-ink-soft); font-size: 12px; }
+  .private-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(110px, 1fr)); gap: 9px; }
+  .private-metric { min-width: 0; padding: 11px 12px; border-radius: 10px; background: #f8f4ee; }
+  .private-metric span { display: block; overflow: hidden; color: #6b7280; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .private-metric strong { display: block; margin-top: 5px; color: var(--sau-ink); font-size: 19px; }
+  .trend-bars.compact { height: 22px; margin-top: 8px; }
+  .profile-fact { min-width: 120px; padding: 10px 12px; border: 1px solid var(--sau-line); border-radius: 10px; background: #f8f4ee; }
+  .profile-fact span { display: block; margin-bottom: 5px; color: #909399; font-size: 12px; }
+  .profile-fact strong { color: #303133; font-size: 14px; white-space: pre-line; }
+  .account-stats-grid { display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 12px; }
+  .account-stat { padding: 13px 14px; border: 1px solid var(--sau-line); border-radius: 11px; background: #fffefa; }
+  .account-stat > span { display: block; color: #606266; font-size: 13px; }
+  .account-stat > strong { display: block; margin: 5px 0 9px; color: var(--sau-ink); font-size: 21px; }
+  .account-stat small { color: #b0b3b8; }
+  .trend-bars { display: flex; align-items: flex-end; gap: 2px; height: 34px; }
+  .trend-bars i { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; background: var(--sau-cinnabar); opacity: .72; }
+  @media (max-width: 760px) { .page-header, .card-header, .card-header-actions, .official-heading { align-items: flex-start; flex-direction: column; gap: 12px; } .fact-grid, .metric-grid, .official-grid, .account-stats-grid, .private-data-layout, .private-metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } .private-data-section, .portrait-section { grid-column: 1 / -1; } .top-work-line { align-items: flex-start; flex-direction: column; } }
 }
 </style>

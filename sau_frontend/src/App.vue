@@ -5,7 +5,7 @@
         <div class="brand-mark">拆</div>
         <div v-show="!isCollapse" class="brand-copy">
           <strong>自媒体内容拆解</strong>
-          <span>对标爆款分析工作台</span>
+          <span>跨平台事实复盘工作台</span>
         </div>
       </div>
 
@@ -25,7 +25,11 @@
         </el-menu-item>
         <el-menu-item index="/idea-radar">
           <el-icon><DataAnalysis /></el-icon>
-          <template #title>爆款拆解</template>
+          <template #title>对标作品事实</template>
+        </el-menu-item>
+        <el-menu-item index="/platform-connections">
+          <el-icon><Connection /></el-icon>
+          <template #title>账号连接</template>
         </el-menu-item>
         <el-menu-item index="/own-content-review">
           <el-icon><TrendCharts /></el-icon>
@@ -57,8 +61,10 @@
           <strong>{{ routeMeta.title }}</strong>
         </div>
         <div class="topbar-actions">
-          <el-button text :icon="Refresh">同步数据</el-button>
-          <el-button type="primary" :icon="Plus">新建复盘</el-button>
+          <template v-if="showWorkspaceActions">
+            <el-button text :icon="Refresh">同步数据</el-button>
+            <el-button type="primary" :icon="Plus">新建复盘</el-button>
+          </template>
           <el-tag type="info" effect="plain">本机模式</el-tag>
         </div>
       </el-header>
@@ -75,6 +81,7 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Aim,
+  Connection,
   DataAnalysis,
   Fold,
   HomeFilled,
@@ -91,7 +98,8 @@ const isCollapse = ref(false)
 const pageMeta = {
   '/': { kicker: 'Dashboard', title: '增长总览' },
   '/benchmark-management': { kicker: 'Benchmark', title: '对标内容库' },
-  '/idea-radar': { kicker: 'Insight', title: '爆款拆解' },
+  '/idea-radar': { kicker: 'Evidence', title: '对标作品事实' },
+  '/platform-connections': { kicker: 'Connections', title: '账号连接' },
   '/own-content-review': { kicker: 'Review', title: '作品复盘' },
   '/video-inspector': { kicker: 'Video Jiexi', title: '视频解析' },
   '/data': { kicker: 'Data', title: '数据明细' },
@@ -100,6 +108,7 @@ const pageMeta = {
 
 const activeMenu = computed(() => route.path)
 const routeMeta = computed(() => pageMeta[route.path] || pageMeta['/'])
+const showWorkspaceActions = computed(() => !['/platform-connections', '/own-content-review', '/agent-models'].includes(route.path))
 
 const toggleSidebar = () => {
   isCollapse.value = !isCollapse.value
@@ -110,7 +119,7 @@ const toggleSidebar = () => {
 <style lang="scss" scoped>
 .app-shell {
   min-height: 100vh;
-  background: #f6f7f9;
+  background: transparent;
 }
 
 .app-sidebar {
@@ -118,8 +127,10 @@ const toggleSidebar = () => {
   top: 0;
   height: 100vh;
   overflow: hidden;
-  border-right: 1px solid #e6e8ec;
-  background: #ffffff;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(197, 75, 60, 0.22), transparent 28%),
+    linear-gradient(180deg, #1d2b3a 0%, #162332 100%);
   transition: width 0.24s ease;
 }
 
@@ -129,17 +140,17 @@ const toggleSidebar = () => {
   gap: 12px;
   height: 72px;
   padding: 0 18px;
-  border-bottom: 1px solid #edf0f3;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .brand-mark {
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  background: #111827;
+  background: var(--sau-cinnabar);
   color: #ffffff;
   font-weight: 800;
 }
@@ -153,13 +164,13 @@ const toggleSidebar = () => {
   }
 
   strong {
-    color: #14171f;
+    color: #fffaf3;
     font-size: 16px;
   }
 
   span {
     margin-top: 2px;
-    color: #7a8493;
+    color: #b9c2c9;
     font-size: 12px;
   }
 }
@@ -167,17 +178,28 @@ const toggleSidebar = () => {
 .sidebar-menu {
   border-right: 0;
   padding: 12px 10px;
+  background: transparent;
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: #b9c2c9;
+  --el-menu-hover-bg-color: rgba(255, 253, 249, 0.1);
+  --el-menu-active-color: #1d2b3a;
 
   :deep(.el-menu-item) {
     height: 42px;
     margin-bottom: 4px;
     border-radius: 8px;
-    color: #4b5563;
+    color: #b9c2c9;
   }
 
   :deep(.el-menu-item.is-active) {
-    background: #111827;
-    color: #ffffff;
+    background: rgba(255, 253, 249, 0.96);
+    color: #1d2b3a;
+    box-shadow: 0 6px 18px rgba(8, 17, 26, 0.18);
+  }
+
+  :deep(.el-menu-item:hover) {
+    background: rgba(255, 253, 249, 0.1);
+    color: #fffaf3;
   }
 }
 
@@ -187,9 +209,9 @@ const toggleSidebar = () => {
   bottom: 14px;
   left: 14px;
   padding: 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 253, 249, 0.07);
 
   span,
   strong {
@@ -198,12 +220,12 @@ const toggleSidebar = () => {
 
   span {
     margin-bottom: 6px;
-    color: #7a8493;
+    color: #b9c2c9;
     font-size: 12px;
   }
 
   strong {
-    color: #1f2937;
+    color: #fffaf3;
     font-size: 13px;
     line-height: 1.5;
   }
@@ -219,18 +241,18 @@ const toggleSidebar = () => {
   display: flex;
   align-items: center;
   gap: 16px;
-  border-bottom: 1px solid #e6e8ec;
-  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--sau-line);
+  background: rgba(255, 253, 249, 0.88);
   backdrop-filter: blur(12px);
 }
 
 .icon-button {
   width: 36px;
   height: 36px;
-  border: 1px solid #dce1e7;
+  border: 1px solid var(--sau-line);
   border-radius: 8px;
-  background: #ffffff;
-  color: #374151;
+  background: var(--sau-paper);
+  color: var(--sau-ink);
   cursor: pointer;
 }
 
@@ -243,13 +265,13 @@ const toggleSidebar = () => {
   }
 
   span {
-    color: #8b95a5;
+    color: var(--sau-brass);
     font-size: 12px;
   }
 
   strong {
     margin-top: 2px;
-    color: #111827;
+    color: var(--sau-ink);
     font-size: 18px;
   }
 }
@@ -265,6 +287,9 @@ const toggleSidebar = () => {
   min-height: calc(100vh - 72px);
   padding: 24px;
   overflow-y: auto;
+  background:
+    linear-gradient(rgba(255, 253, 249, 0.38), rgba(255, 253, 249, 0.38)),
+    repeating-linear-gradient(0deg, transparent 0, transparent 31px, rgba(29, 43, 58, 0.018) 32px);
 }
 
 @media (max-width: 860px) {

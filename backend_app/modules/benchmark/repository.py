@@ -434,15 +434,18 @@ def list_idea_radar_videos(db_path, parse_metric_number, limit=80):
             raw_data = {}
         monitor_work = raw_data.get("monitor_work") if isinstance(raw_data, dict) else {}
         monitor_work = monitor_work if isinstance(monitor_work, dict) else {}
-        hot_status = str(
-            monitor_work.get("status")
-            or raw_data.get("status") if isinstance(raw_data, dict) else ""
-        ).strip().lower()
-        # 爆款拆解只接收热度筛选器的结果；旧的手动导入作品不会混入队列。
-        if hot_status not in {"hot", "very_hot"}:
+        relative_multiple = monitor_work.get("relative_multiple") or raw_data.get("relative_multiple")
+        try:
+            relative_multiple = float(relative_multiple)
+        except (TypeError, ValueError):
+            relative_multiple = None
+        # 统一使用当前标准重新判定，避免历史记录里旧的 hot_status 继续污染列表：
+        # 3 倍进入“火”，5 倍进入“特别火”。
+        if relative_multiple is None or relative_multiple < 3.0:
             continue
+        hot_status = "very_hot" if relative_multiple >= 5.0 else "hot"
         item["hot_status"] = hot_status
-        item["relative_multiple"] = monitor_work.get("relative_multiple") or raw_data.get("relative_multiple")
+        item["relative_multiple"] = relative_multiple
         item["monitor_metrics"] = monitor_work.get("latest_public_metrics") or raw_data.get("metrics") or {}
         item["like_score"] = parse_metric_number(item.get("like_count"))
         videos.append(item)

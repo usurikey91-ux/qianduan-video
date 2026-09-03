@@ -73,6 +73,7 @@ from backend_app.modules.mcp_server.tools import create_tool_handlers
 from backend_app.modules.own_content_review import repository as own_content_repository
 from backend_app.modules.own_content_review import xiaohongshu_repository as xhs_content_repository
 from backend_app.modules.own_content_review import connectors as own_content_connectors
+from backend_app.modules.own_content_review import platform_connections
 from backend_app.modules.own_content_review.service import review_published_content
 from backend_app.modules.accounts import repository as account_repository
 from backend_app.modules.materials import repository as material_repository
@@ -131,6 +132,46 @@ def save_runtime_settings(settings):
         json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     temporary_path.replace(settings_path)
+
+
+DEFAULT_BENCHMARK_MONITORING_RULES = {
+    "reference_work_count": 20,
+    "hot_multiple": 3.0,
+    "very_hot_multiple": 5.0,
+    "interval_hours": 4,
+    "inherit_global": True,
+}
+
+
+def normalize_benchmark_monitoring_rules(payload=None, *, inherit_global=True):
+    source = payload if isinstance(payload, dict) else {}
+    rules = {
+        "reference_work_count": int(source.get("reference_work_count", source.get("referenceWorkCount", 20))),
+        "hot_multiple": float(source.get("hot_multiple", source.get("hotMultiple", 3))),
+        "very_hot_multiple": float(source.get("very_hot_multiple", source.get("veryHotMultiple", 5))),
+        "interval_hours": int(source.get("interval_hours", source.get("intervalHours", 4))),
+        "inherit_global": bool(source.get("inherit_global", source.get("inheritGlobal", inherit_global))),
+    }
+    if not 5 <= rules["reference_work_count"] <= 50:
+        raise ValueError("参考作品数必须在 5 到 50 条之间")
+    if not 1.5 <= rules["hot_multiple"] <= 10:
+        raise ValueError("火倍数必须在 1.5 到 10 之间")
+    if not 2 <= rules["very_hot_multiple"] <= 20:
+        raise ValueError("特别火倍数必须在 2 到 20 之间")
+    if rules["very_hot_multiple"] <= rules["hot_multiple"]:
+        raise ValueError("特别火倍数必须大于火倍数")
+    if rules["interval_hours"] not in {1, 2, 4, 8, 12, 24}:
+        raise ValueError("巡检频率只支持 1、2、4、8、12 或 24 小时")
+    return rules
+
+
+def get_benchmark_monitoring_defaults(settings=None):
+    settings = settings or load_runtime_settings()
+    stored = settings.get("benchmarkMonitoringDefaults")
+    try:
+        return normalize_benchmark_monitoring_rules(stored, inherit_global=True)
+    except (TypeError, ValueError):
+        return dict(DEFAULT_BENCHMARK_MONITORING_RULES)
 
 
 def get_hermes_settings(settings=None):
@@ -511,6 +552,7 @@ def integrations_settings_api():
             "videoJiexiBaseUrl": video_jiexi_client.base_url(settings),
             "videoJiexiApiTokenConfigured": bool(video_jiexi_client.api_token(settings)),
             "videoJiexiDownloadDir": str(video_jiexi_client.download_root(settings) or ""),
+            "factsOnlyMode": settings.get("factsOnlyMode") is True,
         }})
 
     payload = request.get_json(silent=True) or {}
@@ -542,6 +584,7 @@ def integrations_settings_api():
         "videoJiexiBaseUrl": video_jiexi_client.base_url(settings),
         "videoJiexiApiTokenConfigured": bool(video_jiexi_client.api_token(settings)),
         "videoJiexiDownloadDir": str(video_jiexi_client.download_root(settings) or ""),
+        "factsOnlyMode": settings.get("factsOnlyMode") is True,
     }})
 
 
@@ -912,6 +955,10 @@ def list_own_douyin_videos(limit=100):
     return own_content_repository.list_videos(get_db_path(), limit)
 
 
+def get_own_douyin_overview():
+    return own_content_repository.get_latest_account_snapshot(get_db_path())
+
+
 def save_own_xiaohongshu_import(rows, account_name="我的小红书账号"):
     account_name = clean_import_value(account_name) or "我的小红书账号"
     return xhs_content_repository.save_import(
@@ -919,8 +966,12 @@ def save_own_xiaohongshu_import(rows, account_name="我的小红书账号"):
     )
 
 
-def list_own_xiaohongshu_videos(limit=100):
-    return xhs_content_repository.list_videos(get_db_path(), limit)
+def list_own_xiaohongshu_videos(limit=100, account_id=None):
+    return xhs_content_repository.list_videos(get_db_path(), limit, account_id=account_id)
+
+
+def get_own_xiaohongshu_overview(account_id=None):
+    return xhs_content_repository.get_latest_account_snapshot(get_db_path(), account_id=account_id)
 
 
 def get_douyin_benchmark_video_urls(account_id):
@@ -2027,14 +2078,60 @@ def bind_opencli_monitor_account():
         or payload.get("sec_uid")
     )
     try:
+        settings = load_runtime_settings()
         result = opencli_monitor_service.bind_account(
-            platform, account_reference, load_runtime_settings()
+            platform,
+            account_reference,
+            settings,
+            monitoring_rules=get_benchmark_monitoring_defaults(settings),
         )
         return jsonify({"code": 200, "msg": "success", "data": result}), 201
     except ValueError as exc:
         return jsonify({"code": 400, "msg": str(exc), "data": None}), 400
     except opencli_monitor_service.OpenCLIAdminError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/benchmark/monitor/rules', methods=['GET'])
+def get_benchmark_monitor_rules():
+    return jsonify({"code": 200, "msg": "success", "data": get_benchmark_monitoring_defaults()}), 200
+
+
+@app.route('/benchmark/monitor/rules', methods=['PUT'])
+def update_benchmark_monitor_rules():
+    payload = request.get_json(silent=True) or {}
+    try:
+        rules = normalize_benchmark_monitoring_rules(payload, inherit_global=True)
+        rules["inherit_global"] = True
+    except (TypeError, ValueError) as exc:
+        return jsonify({"code": 400, "msg": str(exc), "data": None}), 400
+    settings = load_runtime_settings()
+    settings["benchmarkMonitoringDefaults"] = rules
+    save_runtime_settings(settings)
+    applied = 0
+    failures = []
+    try:
+        accounts = opencli_monitor_service.list_accounts(None, settings)
+        for account in accounts:
+            if account.get("collection_enabled") is False and account.get("collection_status") != "paused":
+                continue
+            current = account.get("monitoring_rules") or {}
+            if current.get("inherit_global", True) is not True:
+                continue
+            try:
+                opencli_monitor_service.update_account(
+                    account["id"], {"monitoring_rules": rules}, settings
+                )
+                applied += 1
+            except opencli_monitor_service.OpenCLIAdminError as exc:
+                failures.append({"account_id": account.get("id"), "error": str(exc)})
+    except opencli_monitor_service.OpenCLIAdminError as exc:
+        failures.append({"account_id": None, "error": str(exc)})
+    return jsonify({
+        "code": 200,
+        "msg": "success" if not failures else "默认规则已保存，部分账号同步失败",
+        "data": {"rules": rules, "accounts_updated": applied, "failures": failures},
+    }), 200
 
 
 @app.route('/benchmark/platforms', methods=['GET'])
@@ -2064,6 +2161,45 @@ def check_opencli_monitor_account(account_id):
     try:
         result = opencli_monitor_service.check_account(account_id, load_runtime_settings())
         return jsonify({"code": 202, "msg": "success", "data": result}), 202
+    except opencli_monitor_service.OpenCLIAdminError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/benchmark/monitor/accounts/<account_id>', methods=['DELETE'])
+def remove_opencli_monitor_account(account_id):
+    try:
+        result = opencli_monitor_service.remove_account(
+            account_id, settings=load_runtime_settings()
+        )
+        return jsonify({"code": 200, "msg": "success", "data": result}), 200
+    except opencli_monitor_service.OpenCLIAdminError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/benchmark/monitor/accounts/<account_id>', methods=['PATCH'])
+def update_opencli_monitor_account(account_id):
+    payload = request.get_json(silent=True) or {}
+    changes = {}
+    display_name = str(payload.get("displayName") or payload.get("display_name") or "").strip()
+    if display_name:
+        changes["display_name"] = display_name
+    if "monitoringRules" in payload or "monitoring_rules" in payload:
+        try:
+            changes["monitoring_rules"] = normalize_benchmark_monitoring_rules(
+                payload.get("monitoringRules") or payload.get("monitoring_rules"),
+                inherit_global=False,
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify({"code": 400, "msg": str(exc), "data": None}), 400
+    if "enabled" in payload:
+        changes["enabled"] = bool(payload.get("enabled"))
+    if not changes:
+        return jsonify({"code": 400, "msg": "没有可保存的账号设置", "data": None}), 400
+    try:
+        result = opencli_monitor_service.update_account(
+            account_id, changes, load_runtime_settings()
+        )
+        return jsonify({"code": 200, "msg": "success", "data": result}), 200
     except opencli_monitor_service.OpenCLIAdminError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
 
@@ -2275,6 +2411,14 @@ def get_own_douyin_videos():
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
 
 
+@app.route('/own/douyin/overview', methods=['GET'])
+def get_own_douyin_account_overview():
+    try:
+        return jsonify({"code": 200, "msg": "success", "data": get_own_douyin_overview()}), 200
+    except Exception as exc:
+        return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
+
+
 @app.route('/own/xiaohongshu/import/preview', methods=['POST'])
 def preview_own_xiaohongshu_import():
     """Preview normalized Xiaohongshu creator exports using the shared schema."""
@@ -2319,10 +2463,20 @@ def import_own_xiaohongshu_videos():
 def get_own_xiaohongshu_videos():
     try:
         limit = request.args.get("limit", 100)
-        videos = list_own_xiaohongshu_videos(limit)
+        account_id = request.args.get("account_id", type=int)
+        videos = list_own_xiaohongshu_videos(limit, account_id=account_id)
         return jsonify({"code": 200, "msg": "success", "data": videos}), 200
     except Exception as e:
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
+
+
+@app.route('/own/xiaohongshu/overview', methods=['GET'])
+def get_own_xiaohongshu_account_overview():
+    try:
+        account_id = request.args.get("account_id", type=int)
+        return jsonify({"code": 200, "msg": "success", "data": get_own_xiaohongshu_overview(account_id=account_id)}), 200
+    except Exception as exc:
+        return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
 
 
 @app.route('/own/<platform>/sync', methods=['POST'])
@@ -2359,18 +2513,56 @@ def get_own_review_sources():
         "douyin": {
             "label": "抖音作品复盘", "connector": "Kuhakucai/douyin-mcp",
             "status": "sync_available" if douyin_available else "manual_import", "supports": [
-                "播放", "点赞", "评论", "收藏", "分享", "完播率", "5秒完播率", "2秒跳出率", "涨粉",
+                "播放", "点赞", "评论", "收藏", "分享", "完播率", "5秒完播率", "2秒跳出率",
+                "粉丝/非粉丝占比", "作品主页访问", "账号搜索", "作品搜索", "粉丝趋势", "用户画像开放状态",
             ],
-            "note": ("可直接调用本机已安装的 douyin-mcp；也支持 CSV/XLSX 作为备用导入方式。"
+            "note": ("可直接调用本机已安装的 douyin-mcp；作品详情与账号数据中心实际返回的流量、粉丝和画像字段会原样展示，也支持 CSV/XLSX 备用导入。"
                      if douyin_available else connector_status["douyin"].get("error")),
         },
         "xiaohongshu": {
-            "label": "小红书作品复盘", "connector": "OpenCLI 小红书适配器",
-            "status": "sync_available" if xhs_available else "manual_import", "supports": ["播放", "点赞", "收藏", "评论", "分享"],
-            "note": ("可直接调用本机已登录的 OpenCLI 小红书适配器；分享等未返回字段保持为空。"
+            "label": "小红书作品复盘", "connector": "OpenCLI 小红书创作者中心",
+            "status": "sync_available" if xhs_available else "manual_import", "supports": [
+                "观看", "点赞", "收藏", "评论", "分享", "涨粉", "观看来源", "观众画像", "账号趋势",
+            ],
+            "note": ("已接入小红书创作者中心：同步笔记明细、观看来源、观众画像，以及账号近30天趋势；平台暂未生成的指标保持为空。"
                      if xhs_available else connector_status["xiaohongshu"].get("error")),
         },
     }}), 200
+
+
+@app.route('/platform-connections', methods=['GET'])
+def get_platform_connections():
+    """Return local connector and login state without exposing credentials."""
+    try:
+        probe = str(request.args.get("probe", "1")).strip().lower() not in {
+            "0", "false", "no", "off"
+        }
+        data = platform_connections.all_connection_statuses(get_db_path(), probe=probe)
+        return jsonify({"code": 200, "msg": "success", "data": data}), 200
+    except Exception as exc:
+        return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
+
+
+@app.route('/platform-connections/<platform>/login', methods=['POST'])
+def start_platform_login(platform):
+    """Open the connector's visible official-site login flow on this computer."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        limit = max(5, min(int(payload.get("limit") or 20), 50))
+        job = platform_connections.start_login(
+            platform,
+            get_db_path(),
+            acknowledged_risk=bool(payload.get("acknowledgedRisk")),
+            auto_sync=bool(payload.get("autoSync", True)),
+            sync_limit=limit,
+        )
+        return jsonify({"code": 202, "msg": "已打开平台登录流程", "data": job}), 202
+    except ValueError as exc:
+        return jsonify({"code": 400, "msg": str(exc), "data": None}), 400
+    except RuntimeError as exc:
+        return jsonify({"code": 409, "msg": str(exc), "data": None}), 409
+    except Exception as exc:
+        return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
 
 
 @app.route('/benchmark/douyin/accounts', methods=['GET'])
@@ -2486,6 +2678,8 @@ def get_idea_radar_videos():
 @app.route('/idea-radar/douyin/videos/<int:video_id>/analyze', methods=['POST'])
 def analyze_idea_radar_video(video_id):
     try:
+        if load_runtime_settings().get("factsOnlyMode") is True:
+            return jsonify({"code": 409, "msg": "事实模式已启用，不执行 AI 分析", "data": None}), 409
         payload = request.get_json(silent=True) or {}
         # 爆款拆解不依赖账号定位；保留空值只是兼容旧数据库字段。
         target_direction = ""

@@ -188,7 +188,7 @@ onMounted(fetchDashboardData)
 .growth-console {
   max-width: 1160px;
   margin: 0 auto;
-  color: #25272c;
+  color: var(--sau-ink);
 }
 
 .console-header {
@@ -201,7 +201,7 @@ onMounted(fetchDashboardData)
 
   p {
     margin-top: 8px;
-    color: #737780;
+    color: var(--sau-ink-soft);
     font-size: 14px;
   }
 }
@@ -213,7 +213,7 @@ onMounted(fetchDashboardData)
 
   h1 {
     margin: 0;
-    color: #2c2d31;
+    color: var(--sau-ink);
     font-size: 32px;
     font-weight: 500;
     letter-spacing: 0;
@@ -223,27 +223,27 @@ onMounted(fetchDashboardData)
 .project-id {
   padding: 4px 9px;
   border-radius: 7px;
-  background: #f1f1f3;
-  color: #565a62;
+  background: #eee9e1;
+  color: var(--sau-ink-soft);
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .project-region {
-  color: #6f737c;
+  color: var(--sau-ink-soft);
   font-size: 14px;
 }
 
 .primary-action {
   border: 0;
   border-radius: 8px;
-  background: #ff3b7f;
+  background: var(--sau-cinnabar);
   color: #ffffff;
   font-weight: 600;
 
   &:hover,
   &:focus {
-    background: #ef2f72;
+    background: #aa3d31;
     color: #ffffff;
   }
 }
@@ -262,9 +262,9 @@ onMounted(fetchDashboardData)
 }
 
 .metric-card {
-  border: 1px solid #e7e7ea;
+  border: 1px solid var(--sau-line);
   border-radius: 12px;
-  background: #ffffff;
+  background: rgba(255, 253, 249, 0.94);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.02);
 }
 
@@ -279,7 +279,7 @@ onMounted(fetchDashboardData)
   justify-content: space-between;
 
   strong {
-    color: #2b2d31;
+    color: var(--sau-ink);
     font-size: 28px;
     font-weight: 500;
     line-height: 1;
@@ -287,7 +287,7 @@ onMounted(fetchDashboardData)
 
   span {
     margin-left: 4px;
-    color: #4f535a;
+    color: var(--sau-ink-soft);
     font-size: 12px;
   }
 }
@@ -302,7 +302,7 @@ onMounted(fetchDashboardData)
 
 .metric-card.large > p {
   margin: 8px 0 18px;
-  color: #6f737c;
+  color: var(--sau-ink-soft);
   font-size: 15px;
 }
 
@@ -310,14 +310,14 @@ onMounted(fetchDashboardData)
   height: 106px;
   display: grid;
   place-items: center;
-  border: 1px dashed #e8e8ec;
+  border: 1px dashed #cfc3b7;
   border-radius: 12px;
-  color: #747880;
+  color: var(--sau-ink-soft);
   font-weight: 600;
 
   .el-icon {
     margin-bottom: -18px;
-    color: #73777f;
+    color: var(--sau-brass);
     font-size: 20px;
   }
 }
@@ -336,7 +336,7 @@ onMounted(fetchDashboardData)
   strong {
     display: block;
     margin-top: 48px;
-    color: #2b2d31;
+    color: var(--sau-ink);
     font-size: 27px;
     font-weight: 500;
     line-height: 1;
@@ -344,7 +344,7 @@ onMounted(fetchDashboardData)
 
   p {
     margin-top: 7px;
-    color: #636770;
+    color: var(--sau-ink-soft);
     font-size: 15px;
   }
 }
@@ -353,7 +353,7 @@ onMounted(fetchDashboardData)
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #b7b8bd;
+  color: var(--sau-brass);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.8px;
@@ -376,7 +376,7 @@ onMounted(fetchDashboardData)
 
   h2 {
     margin: 0;
-    color: #2c2d31;
+    color: var(--sau-ink);
     font-size: 26px;
     font-weight: 500;
   }
@@ -386,18 +386,18 @@ onMounted(fetchDashboardData)
   display: inline-flex;
   padding: 3px;
   border-radius: 9px;
-  background: #f1f1f4;
+  background: #eee9e1;
 
   button {
     height: 32px;
     padding: 0 14px;
     border-radius: 7px;
-    color: #626771;
+    color: var(--sau-ink-soft);
     font-size: 14px;
 
     &.active {
-      background: #ffffff;
-      color: #2d3035;
+      background: var(--sau-paper);
+      color: var(--sau-ink);
       box-shadow: 0 1px 4px rgba(16, 24, 40, 0.08);
     }
   }
@@ -411,9 +411,9 @@ onMounted(fetchDashboardData)
 
 .action-table {
   overflow: hidden;
-  border: 1px solid #e7e7ea;
+  border: 1px solid var(--sau-line);
   border-radius: 9px;
-  background: #ffffff;
+  background: rgba(255, 253, 249, 0.94);
 }
 
 .table-row {
@@ -423,8 +423,8 @@ onMounted(fetchDashboardData)
   grid-template-columns: 1.4fr 1fr 1fr;
   align-items: center;
   padding: 0 14px;
-  border-bottom: 1px solid #ececef;
-  color: #686c75;
+  border-bottom: 1px solid var(--sau-line);
+  color: var(--sau-ink-soft);
   text-align: left;
   font-size: 14px;
 
@@ -434,13 +434,13 @@ onMounted(fetchDashboardData)
 }
 
 .table-head {
-  color: #646872;
-  background: #fbfbfc;
+  color: var(--sau-ink-soft);
+  background: #f7f3ed;
   font-weight: 500;
 }
 
 button.table-row:hover {
-  background: #fafafa;
+  background: #fbf3ed;
 }
 
 @media (max-width: 980px) {

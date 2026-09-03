@@ -1,0 +1,112 @@
+diff --git a/backend/api/v1/sunbird.py b/backend/api/v1/sunbird.py
+index 05a55a4..00eec1e 100644
+--- a/backend/api/v1/sunbird.py
++++ b/backend/api/v1/sunbird.py
+@@ -36,6 +36,8 @@ def _account_read(account) -> SunbirdAccountRead:
+ @router.get("/platforms", response_model=ApiResponse[list[dict]])
+ async def list_sunbird_platforms(db: AsyncSession = Depends(get_db)) -> ApiResponse:
+     """List platform adapters exposed by configured OpenCLI sources."""
++    await service.ensure_platform_sources(db)
++    await db.commit()
+     result = await db.execute(
+         select(DataSource)
+         .where(DataSource.channel_type == "opencli", DataSource.enabled.is_(True))
+diff --git a/backend/services/sunbird_integration_service.py b/backend/services/sunbird_integration_service.py
+index 9fcecdb..e471811 100644
+--- a/backend/services/sunbird_integration_service.py
++++ b/backend/services/sunbird_integration_service.py
+@@ -36,6 +36,37 @@ DOUYIN_USER_VIDEOS_CONFIG = {
+     "content_monitoring": {},
+ }
+ 
++PLATFORM_SOURCE_DEFINITIONS = {
++    "douyin": {
++        "name": DOUYIN_USER_VIDEOS_SOURCE_NAME,
++        "description": "Content workbench benchmark collection via OpenCLI douyin user-videos",
++        "command": "user-videos",
++        "account_argument": "sec_uid",
++        "args": {"limit": 20, "with_comments": False},
++    },
++    "bilibili": {
++        "name": "Content Workbench · Bilibili public videos",
++        "description": "Content workbench benchmark collection via OpenCLI bilibili user-videos",
++        "command": "user-videos",
++        "account_argument": "uid",
++        "args": {"limit": 20, "order": "pubdate"},
++    },
++    "xiaohongshu": {
++        "name": "Content Workbench · Xiaohongshu public notes",
++        "description": "Content workbench benchmark collection via OpenCLI xiaohongshu user",
++        "command": "user",
++        "account_argument": "user_id",
++        "args": {"limit": 20},
++    },
++    "kuaishou": {
++        "name": "Content Workbench · Kuaishou public videos",
++        "description": "Content workbench benchmark collection via OpenCLI kuaishou user-videos",
++        "command": "user-videos",
++        "account_argument": "user_id",
++        "args": {"limit": 20},
++    },
++}
++
+ _INTERVAL_CRON = {
+     1: "0 * * * *",
+     2: "0 */2 * * *",
+@@ -224,6 +255,7 @@ async def _get_platform_source(session: AsyncSession, platform: str) -> DataSour
+     Other platforms are intentionally discovered from the user's configured sources,
+     keeping this integration independent from a fixed platform list.
+     """
++    await ensure_platform_sources(session)
+     if platform == "douyin":
+         return await _get_or_create_douyin_source(session)
+     result = await session.execute(
+@@ -239,6 +271,48 @@ async def _get_platform_source(session: AsyncSession, platform: str) -> DataSour
+     return None
+ 
+ 
++async def ensure_platform_sources(session: AsyncSession) -> list[DataSource]:
++    """Provision the four workbench adapters in every new local database."""
++    result = await session.execute(
++        select(DataSource).where(DataSource.channel_type == "opencli")
++    )
++    existing = {
++        str((item.channel_config or {}).get("site") or "").strip().lower(): item
++        for item in result.scalars().all()
++        if isinstance(item.channel_config, dict)
++    }
++    sources: list[DataSource] = []
++    for platform, definition in PLATFORM_SOURCE_DEFINITIONS.items():
++        source = existing.get(platform)
++        config = {
++            "site": platform,
++            "command": definition["command"],
++            "account_argument": definition["account_argument"],
++            "format": "json",
++            "args": dict(definition["args"]),
++            "content_monitoring": {},
++        }
++        if source is None:
++            source = DataSource(
++                name=definition["name"],
++                description=definition["description"],
++                channel_type="opencli",
++                channel_config=config,
++                tags=["content-workbench", "benchmark", platform],
++                enabled=True,
++            )
++            session.add(source)
++        else:
++            source.name = definition["name"]
++            source.description = definition["description"]
++            source.channel_config = config
++            source.tags = ["content-workbench", "benchmark", platform]
++            source.enabled = True
++        sources.append(source)
++    await session.flush()
++    return sources
++
++
+ def error_code(message: str | None) -> str:
+     text = (message or "").lower()
+     if "login required" in text or "请登录" in text or "未登录" in text:

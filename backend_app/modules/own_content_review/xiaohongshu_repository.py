@@ -7,10 +7,11 @@ so the UI remains usable when a platform connector is unavailable.
 
 import json
 import sqlite3
+from contextlib import closing
 
 
 def ensure_tables(db_path):
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS xiaohongshu_own_accounts (
@@ -60,12 +61,22 @@ def ensure_tables(db_path):
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS xiaohongshu_own_account_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            profile_json TEXT NOT NULL DEFAULT '[]',
+            stats_json TEXT NOT NULL DEFAULT '[]',
+            period TEXT NOT NULL DEFAULT 'thirty',
+            captured_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
         conn.commit()
 
 
 def upsert_account(db_path, account_name):
     ensure_tables(db_path)
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         cursor.execute("""
         INSERT INTO xiaohongshu_own_accounts (name)
@@ -82,7 +93,7 @@ def save_import(db_path, rows, account_name, source_key_fn):
     ensure_tables(db_path)
     account_id = upsert_account(db_path, account_name)
     inserted = updated = 0
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         cursor = conn.cursor()
         for item in rows:
             source_key = source_key_fn(item)
@@ -146,14 +157,86 @@ def save_import(db_path, rows, account_name, source_key_fn):
     return {"account_id": account_id, "inserted": inserted, "updated": updated, "total": len(rows)}
 
 
-def list_videos(db_path, limit=100):
+def save_account_snapshot(db_path, account_id, profile, stats, period="thirty"):
+    ensure_tables(db_path)
+    with closing(sqlite3.connect(db_path)) as conn:
+        cursor = conn.execute("""
+        INSERT INTO xiaohongshu_own_account_snapshots
+            (account_id, profile_json, stats_json, period)
+        VALUES (?, ?, ?, ?)
+        """, (
+            account_id,
+            json.dumps(profile or [], ensure_ascii=False),
+            json.dumps(stats or [], ensure_ascii=False),
+            period,
+        ))
+        conn.commit()
+        return cursor.lastrowid
+
+
+def get_latest_account_snapshot(db_path, account_id=None):
+    ensure_tables(db_path)
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("""
+        SELECT s.*, a.name AS account_name
+        FROM xiaohongshu_own_account_snapshots s
+        LEFT JOIN xiaohongshu_own_accounts a ON a.id = s.account_id
+        WHERE (? IS NULL OR s.account_id = ?)
+        ORDER BY s.captured_at DESC, s.id DESC
+        LIMIT 1
+        """, (account_id, account_id)).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    for source_key, target_key in (("profile_json", "profile"), ("stats_json", "stats")):
+        try:
+            result[target_key] = json.loads(result.pop(source_key) or "[]")
+        except (TypeError, ValueError):
+            result[target_key] = []
+    # 官方资料中的昵称是当前连接账号的真实名称；历史数据里可能曾使用过
+    # “我的小红书账号”等 UI 默认名，因此展示时以资料快照为准。
+    for item in result.get("profile") or []:
+        if item.get("label") == "账号名称" and item.get("value"):
+            result["account_name"] = str(item["value"]).strip()
+            break
+    return result
+
+
+def list_videos(db_path, limit=100, account_id=None):
     ensure_tables(db_path)
     try:
         limit = max(1, min(int(limit), 500))
     except Exception:
         limit = 100
-    with sqlite3.connect(db_path) as conn:
+    current_account_name = None
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.row_factory = sqlite3.Row
+        if account_id is None:
+            latest = conn.execute(
+                "SELECT account_id FROM xiaohongshu_own_account_snapshots "
+                "ORDER BY captured_at DESC, id DESC LIMIT 1"
+            ).fetchone()
+            # 没有“当前账号”快照时不能回退为全量历史账号，避免把多个账号混在一起。
+            if not latest:
+                return []
+            account_id = latest[0]
+        if account_id is not None:
+            snapshot = conn.execute(
+                "SELECT profile_json FROM xiaohongshu_own_account_snapshots "
+                "WHERE account_id = ? ORDER BY captured_at DESC, id DESC LIMIT 1",
+                (account_id,),
+            ).fetchone()
+            if snapshot:
+                try:
+                    profile = json.loads(snapshot[0] or "[]")
+                    current_account_name = next(
+                        (str(item.get("value")).strip() for item in profile
+                         if item.get("label") == "账号名称" and item.get("value")),
+                        None,
+                    )
+                except (TypeError, ValueError):
+                    current_account_name = None
         rows = conn.execute("""
         SELECT v.*, a.name AS account_name,
                m.play_count, m.completion_rate, m.five_sec_completion_rate,
@@ -163,7 +246,20 @@ def list_videos(db_path, limit=100):
         FROM xiaohongshu_own_videos v
         LEFT JOIN xiaohongshu_own_accounts a ON a.id = v.account_id
         LEFT JOIN xiaohongshu_own_video_metrics m ON m.video_id = v.id
+        WHERE (? IS NULL OR v.account_id = ?)
         ORDER BY COALESCE(v.published_at, v.created_at) DESC, v.id DESC
         LIMIT ?
-        """, (limit,)).fetchall()
-    return [dict(row) for row in rows]
+        """, (account_id, account_id, limit)).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        if current_account_name and item.get("account_id") == account_id:
+            item["account_name"] = current_account_name
+        try:
+            raw = json.loads(item.get("raw_data") or "{}")
+        except (TypeError, ValueError):
+            raw = {}
+        item["official_metric_sections"] = raw.get("official_metric_sections") or []
+        item["metric_quality"] = raw.get("metric_quality")
+        result.append(item)
+    return result

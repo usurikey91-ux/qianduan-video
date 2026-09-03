@@ -11,8 +11,28 @@ export const benchmarkApi = {
     return http.get('/benchmark/monitor/accounts', platform ? { platform } : undefined)
   },
 
+  getOpencliMonitorRules: () => http.get('/benchmark/monitor/rules'),
+
+  updateOpencliMonitorRules: (rules) => http.put('/benchmark/monitor/rules', rules),
+
   checkOpencliMonitorAccount: (accountId) => {
     return http.post(`/benchmark/monitor/accounts/${accountId}/check`)
+  },
+
+  removeOpencliMonitorAccount: (accountId) => {
+    return http.delete(`/benchmark/monitor/accounts/${accountId}`)
+  },
+
+  updateOpencliMonitorAccount: (accountId, displayName) => {
+    return http.patch(`/benchmark/monitor/accounts/${accountId}`, { displayName })
+  },
+
+  updateOpencliMonitorAccountRules: (accountId, monitoringRules) => {
+    return http.patch(`/benchmark/monitor/accounts/${accountId}`, { monitoringRules })
+  },
+
+  setOpencliMonitorAccountEnabled: (accountId, enabled) => {
+    return http.patch(`/benchmark/monitor/accounts/${accountId}`, { enabled })
   },
 
   getOpencliMonitorWorks: (platform = '') => {

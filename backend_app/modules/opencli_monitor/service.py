@@ -91,15 +91,55 @@ def parse_account_reference(platform: str, value: str) -> tuple[str, str | None]
     text = str(value or "").strip()
     if not text:
         raise ValueError("请输入对标账号主页链接或稳定账号 ID")
+    embedded_url = re.search(r"https?://[^\s<>\]\[\"']+", text)
+    if embedded_url:
+        text = embedded_url.group(0).rstrip(".,!?，。！？")
     if "://" not in text:
         return text, None
     parsed = urlparse(text)
     if not parsed.hostname:
         raise ValueError("账号主页链接无效")
 
+    hostname = parsed.hostname.lower()
+
+    if normalized_platform == "bilibili":
+        if hostname == "b23.tv":
+            try:
+                request = Request(text, headers={"User-Agent": "Mozilla/5.0"})
+                with urlopen(request, timeout=10) as response:
+                    parsed = urlparse(response.geturl())
+                hostname = (parsed.hostname or "").lower()
+            except Exception as exc:
+                raise ValueError("无法从 B 站分享链接识别账号主页") from exc
+        if not hostname.endswith("bilibili.com"):
+            raise ValueError("请输入 bilibili.com 或 b23.tv 的账号主页链接")
+        match = re.search(r"/(?:space/)?(\d+)(?:/|$)", parsed.path)
+        if not match:
+            raise ValueError("B 站主页链接中缺少 UID")
+        uid = match.group(1)
+        return uid, f"https://space.bilibili.com/{uid}"
+
+    if normalized_platform == "kuaishou":
+        if not hostname.endswith("kuaishou.com"):
+            raise ValueError("请输入 kuaishou.com 的账号主页链接")
+        # 快手分享链接有时会先落到 /f/...；跟随官方跳转后再提取
+        # /profile/{id} 或直播域名常用的 /u/{id}。
+        if not re.search(r"/(?:profile|u)/[^/?#]+", parsed.path):
+            try:
+                request = Request(text, headers={"User-Agent": "Mozilla/5.0"})
+                with urlopen(request, timeout=10) as response:
+                    parsed = urlparse(response.geturl())
+            except Exception:
+                pass
+        match = re.search(r"/(?:profile|u)/([^/?#]+)", parsed.path)
+        if not match:
+            raise ValueError("快手链接不是账号主页，未找到稳定账号 ID")
+        user_id = match.group(1).strip()
+        return user_id, f"https://www.kuaishou.com/profile/{user_id}"
+
     # 小红书分享短链不包含稳定用户 ID；跟随一次官方重定向，
     # 再从最终的 /user/profile/{id} 路径提取 ID。
-    if normalized_platform == "xiaohongshu" and parsed.hostname.lower() in {"xhslink.cn", "xhslink.com"}:
+    if normalized_platform == "xiaohongshu" and hostname in {"xhslink.cn", "xhslink.com"}:
         try:
             request = Request(
                 text,
@@ -112,9 +152,17 @@ def parse_account_reference(platform: str, value: str) -> tuple[str, str | None]
             if profile_match:
                 external_id = profile_match.group(1).strip()
                 return external_id, f"https://www.xiaohongshu.com/user/profile/{external_id}"
-        except Exception:
-            # 如果短链服务暂时不可用，继续走通用解析，随后由采集器标记状态。
-            pass
+        except Exception as exc:
+            raise ValueError("无法从小红书分享链接识别账号主页") from exc
+
+    if normalized_platform == "xiaohongshu":
+        if not hostname.endswith("xiaohongshu.com"):
+            raise ValueError("请输入 xiaohongshu.com 或 xhslink.cn 的账号主页链接")
+        profile_match = re.search(r"/user/profile/([^/?#]+)", parsed.path)
+        if not profile_match:
+            raise ValueError("小红书链接不是账号主页，未找到稳定账号 ID")
+        external_id = profile_match.group(1).strip()
+        return external_id, f"https://www.xiaohongshu.com/user/profile/{external_id}"
 
     path_parts = [part for part in parsed.path.split("/") if part]
     external_id = path_parts[-1] if path_parts else parsed.hostname
@@ -176,6 +224,7 @@ def bind_account(
     platform: str,
     account_reference: str,
     settings: dict[str, Any] | None = None,
+    monitoring_rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     platform = str(platform or "").strip().lower()
     if not platform:
@@ -187,6 +236,8 @@ def bind_account(
     }
     if profile_url:
         payload["profile_url"] = profile_url
+    if monitoring_rules:
+        payload["monitoring_rules"] = monitoring_rules
     result = _request(
         "POST",
         "/integrations/sunbird/accounts",
@@ -236,6 +287,48 @@ def check_account(account_id: str, settings: dict[str, Any] | None = None) -> di
         "POST",
         f"/integrations/sunbird/accounts/{quote(str(account_id), safe='')}/check",
         settings=settings,
+    )
+    return result if isinstance(result, dict) else {}
+
+
+def remove_account(
+    account_id: str,
+    *,
+    settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = _request(
+        "DELETE",
+        f"/integrations/sunbird/accounts/{quote(str(account_id), safe='')}",
+        settings=settings,
+    )
+    return result if isinstance(result, dict) else {}
+
+
+def update_account_name(
+    account_id: str,
+    display_name: str,
+    settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = _request(
+        "PATCH",
+        f"/integrations/sunbird/accounts/{quote(str(account_id), safe='')}",
+        payload={"display_name": str(display_name).strip()},
+        settings=settings,
+    )
+    return result if isinstance(result, dict) else {}
+
+
+def update_account(
+    account_id: str,
+    changes: dict[str, Any],
+    settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result = _request(
+        "PATCH",
+        f"/integrations/sunbird/accounts/{quote(str(account_id), safe='')}",
+        payload=changes,
+        settings=settings,
+        timeout=120,
     )
     return result if isinstance(result, dict) else {}
 

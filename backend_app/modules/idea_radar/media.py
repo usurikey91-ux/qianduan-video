@@ -6,6 +6,32 @@ import sys
 from pathlib import Path
 
 
+_CUDA_DLL_HANDLES = []
+
+
+def configure_local_cuda_runtime():
+    """Reuse the CUDA runtime already installed with the local WhisperX project."""
+    if os.name != "nt" or _CUDA_DLL_HANDLES:
+        return
+    configured_root = os.environ.get("WHISPERX_RUNTIME_ROOT")
+    runtime_root = (
+        Path(configured_root)
+        if configured_root
+        else Path(__file__).resolve().parents[4] / "视频一键制作" / ".venv-whisperx"
+    )
+    candidates = (
+        runtime_root / "Lib" / "site-packages" / "torch" / "lib",
+        runtime_root / "Lib" / "site-packages" / "ctranslate2",
+    )
+    existing_path = os.environ.get("PATH", "")
+    available = [str(directory) for directory in candidates if directory.is_dir()]
+    if available:
+        os.environ["PATH"] = os.pathsep.join([*available, existing_path])
+    for directory in candidates:
+        if directory.is_dir():
+            _CUDA_DLL_HANDLES.append(os.add_dll_directory(str(directory)))
+
+
 def write_netscape_cookie_file(storage_state_path, output_path):
     data = json.loads(Path(storage_state_path).read_text(encoding="utf-8"))
     lines = ["# Netscape HTTP Cookie File"]
@@ -157,14 +183,18 @@ def download_douyin_video(video_url, work_dir, *, base_dir, latest_cookie_file, 
 
 
 def transcribe_media(media_path, progress_callback=None, log=None):
-    model = os.environ.get("IDEA_RADAR_WHISPER_MODEL", "base")
+    # medium 已随“视频一键制作”环境下载到本机 Hugging Face 缓存，
+    # 对中文短视频的口语、同音词和背景噪声比 base 更稳；仍可通过环境变量覆盖。
+    model = os.environ.get("IDEA_RADAR_WHISPER_MODEL", "medium")
     language = "zh"
-    device = os.environ.get("IDEA_RADAR_WHISPER_DEVICE", "cpu")
-    compute_type = os.environ.get("IDEA_RADAR_WHISPER_COMPUTE_TYPE", "int8")
+    # 本机 RTX 4050 可正常加载 medium；使用 GPU + float16 才能兼顾准确率和速度。
+    device = os.environ.get("IDEA_RADAR_WHISPER_DEVICE", "cuda")
+    compute_type = os.environ.get("IDEA_RADAR_WHISPER_COMPUTE_TYPE", "float16")
     media_path = Path(media_path)
     if not media_path.exists():
         raise FileNotFoundError(media_path)
 
+    configure_local_cuda_runtime()
     try:
         from faster_whisper import WhisperModel
     except ModuleNotFoundError as exc:

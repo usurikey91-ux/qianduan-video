@@ -1,0 +1,344 @@
+diff --git a/src/douyin_creator_mcp/browser/extractors.py b/src/douyin_creator_mcp/browser/extractors.py
+index c6bfc37..cd3f87f 100644
+--- a/src/douyin_creator_mcp/browser/extractors.py
++++ b/src/douyin_creator_mcp/browser/extractors.py
+@@ -211,6 +211,64 @@ _OPEN_TRAFFIC_TAB_SCRIPT = r"""
+ }
+ """
+ 
++_OPEN_AUDIENCE_TAB_SCRIPT = r"""
++() => {
++  const exactText = element => (element.innerText || '').trim() === '观众分析';
++  const roleTab = [...document.querySelectorAll('[role="tab"]')].find(exactText);
++  const leaf = [...document.querySelectorAll('body *')]
++    .filter(element => element.children.length === 0)
++    .find(exactText);
++  const target = roleTab || (leaf && (leaf.closest('[role="tab"]') || leaf));
++  if (!target) return false;
++  target.click();
++  return true;
++}
++"""
++
++_FETCH_PRIVATE_DETAIL_METRICS_SCRIPT = r"""
++async () => {
++  const match = window.location.pathname.match(/work-detail\/(\d+)/);
++  if (!match) return {};
++  try {
++    const response = await fetch(
++      `/web/api/creator/item/mget?ids=${match[1]}&fields=metrics`,
++      {credentials: 'include'}
++    );
++    const payload = await response.json();
++    const metrics = payload && payload.items && payload.items[0] && payload.items[0].metrics;
++    if (!metrics) return {};
++    const out = {};
++    const percent = value => {
++      const numeric = Number(value);
++      if (!Number.isFinite(numeric)) return null;
++      return `${(numeric * 100).toFixed(2)}%`;
++    };
++    const fan = percent(metrics.fan_view_proportion);
++    if (fan !== null) {
++      out['粉丝播放占比'] = fan;
++      out['非粉丝播放占比（按平台粉丝占比反算）'] =
++        `${((1 - Number(metrics.fan_view_proportion)) * 100).toFixed(2)}%`;
++    }
++    const mappings = {
++      homepage_visit_count: '作品带来的主页访问',
++      subscribe_count: '吸粉量',
++      unsubscribe_count: '脱粉量',
++      download_count: '下载量',
++      danmaku_count: '弹幕量',
++      dislike_count: '不感兴趣量'
++    };
++    for (const [source, label] of Object.entries(mappings)) {
++      if (metrics[source] !== undefined && metrics[source] !== null) {
++        out[label] = String(metrics[source]);
++      }
++    }
++    return out;
++  } catch (_) {
++    return {};
++  }
++}
++"""
++
+ _EXTRACT_TEXT_METRICS_SCRIPT = r"""
+ () => {
+   const lines = (document.body.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+@@ -227,6 +285,23 @@ _EXTRACT_TEXT_METRICS_SCRIPT = r"""
+ }
+ """
+ 
++_EXTRACT_TRAFFIC_SOURCES_SCRIPT = r"""
++() => {
++  const lines = (document.body.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
++  const sourceLabel = /^(推荐页?|首页推荐|关注页?|搜索|个人主页|主页|同城|好友|站外|其他|DOU\+|话题|音乐|合集|经验|粉丝|非粉丝)$/i;
++  const valueRe = /^-?[\d,]+(?:\.\d+)?(?:%|万|亿)?$/;
++  const out = {};
++  for (let i = 0; i + 1 < lines.length; i++) {
++    if (!sourceLabel.test(lines[i])) continue;
++    let value = lines[i + 1];
++    if (!valueRe.test(value)) continue;
++    if (lines[i + 2] === '%' && !value.endsWith('%')) value += '%';
++    out[`流量来源·${lines[i]}`] = value;
++  }
++  return out;
++}
++"""
++
+ DETAIL_METRIC_FIELDS = (
+     "exposure_count",
+     "play_count",
+@@ -693,6 +768,14 @@ def _collect_detail_sections(
+         collected_sections.append("overview")
+     _merge_text_pass("overview_text")
+ 
++    try:
++        private_metrics = page.evaluate(_FETCH_PRIVATE_DETAIL_METRICS_SCRIPT)
++    except Exception:
++        private_metrics = {}
++    if isinstance(private_metrics, dict) and private_metrics:
++        raw.update(private_metrics)
++        collected_sections.append("creator_private_api")
++
+     if login_status != LOGGED_IN:
+         return raw, collected_sections
+     try:
+@@ -712,9 +795,126 @@ def _collect_detail_sections(
+         raw.update(traffic)
+         collected_sections.append("traffic")
+     _merge_text_pass("traffic_text")
++    try:
++        traffic_sources = page.evaluate(_EXTRACT_TRAFFIC_SOURCES_SCRIPT)
++    except Exception:
++        traffic_sources = {}
++    if isinstance(traffic_sources, dict) and traffic_sources:
++        raw.update(traffic_sources)
++        collected_sections.append("traffic_sources")
++
++    try:
++        audience_opened = page.evaluate(_OPEN_AUDIENCE_TAB_SCRIPT)
++    except Exception:
++        audience_opened = False
++    if audience_opened:
++        if callable(wait_for_timeout):
++            wait_for_timeout(1500)
++        _merge_text_pass("audience_text")
+     return raw, collected_sections
+ 
+ 
++def extract_creator_identity(page: Any) -> dict[str, Any]:
++    """Read the visible creator nickname without returning browser credentials."""
++    try:
++        payload = page.evaluate(
++            r"""
++            () => {
++              const nameNode = [...document.querySelectorAll('[class^="name-"]')]
++                .find(node => {
++                  const text = (node.innerText || '').trim();
++                  return text && text.length <= 30;
++                });
++              const avatarNode = nameNode && nameNode.parentElement
++                ? nameNode.parentElement.querySelector('img')
++                : null;
++              return nameNode ? {
++                display_name: (nameNode.innerText || '').trim(),
++                avatar_url: avatarNode ? (avatarNode.currentSrc || avatarNode.src || '') : ''
++              } : {};
++            }
++            """
++        )
++    except Exception:
++        return {}
++    if not isinstance(payload, dict):
++        return {}
++    return {key: value for key, value in payload.items() if value not in (None, "")}
++
++
++def extract_account_overview(page: Any) -> dict[str, Any]:
++    """Read creator-only account traffic and fan facts from the signed-in page."""
++    payload = page.evaluate(
++        r"""
++        async () => {
++          const getJson = async path => {
++            try {
++              const response = await fetch(path, {credentials: 'include'});
++              return response.ok ? await response.json() : {};
++            } catch (_) {
++              return {};
++            }
++          };
++          const [overview, fans, portrait] = await Promise.all([
++            getJson('/aweme/janus/creator/data/overview/all/?last_days_type=1'),
++            getJson('/janus/douyin/creator/data/overview/dashboard/fans?recent_days=7'),
++            getJson('/web/api/creator/center/fans/index/config?aid=1128')
++          ]);
++          return {overview, fans, portrait};
++        }
++        """
++    )
++    payload = payload if isinstance(payload, dict) else {}
++    overview = payload.get("overview") if isinstance(payload.get("overview"), dict) else {}
++    overview_data = overview.get("data") if isinstance(overview.get("data"), dict) else {}
++    fan_payload = payload.get("fans") if isinstance(payload.get("fans"), dict) else {}
++    portrait = payload.get("portrait") if isinstance(payload.get("portrait"), dict) else {}
++
++    traffic_labels = {
++        "post_search": "作品搜索",
++        "account_search": "账号搜索",
++        "profile": "主页访问",
++        "share": "作品分享",
++    }
++    traffic_sources = []
++    for key, label in traffic_labels.items():
++        source = overview_data.get(key)
++        if not isinstance(source, dict) or source.get("current_count") in (None, ""):
++            continue
++        traffic_sources.append({
++            "key": key,
++            "label": label,
++            "value": source.get("current_count"),
++            "trend": source.get("option_list") if isinstance(source.get("option_list"), list) else [],
++        })
++
++    fan_metrics = []
++    for metric in fan_payload.get("metrics") or []:
++        if not isinstance(metric, dict) or not metric.get("metric_name"):
++            continue
++        fan_metrics.append({
++            "key": metric.get("english_metric_name"),
++            "label": metric.get("metric_name"),
++            "value": metric.get("metric_value"),
++            "trend": metric.get("trends") if isinstance(metric.get("trends"), list) else [],
++        })
++
++    portrait_available = bool(portrait.get("enable"))
++    return {
++        "period": "7d",
++        "account_identity": extract_creator_identity(page),
++        "traffic_sources": traffic_sources,
++        "fan_metrics": fan_metrics,
++        "audience_profile": [],
++        "audience_profile_available": portrait_available,
++        "audience_profile_note": (
++            "平台已开放用户画像，但当前连接器尚未返回画像明细。"
++            if portrait_available
++            else "抖音当前未向该账号开放用户画像数据。"
++        ),
++    }
++
++
+ def extract_page_snapshot(
+     page: Any,
+     structured_videos: list[dict[str, Any]] | None = None,
+diff --git a/src/douyin_creator_mcp/browser/session.py b/src/douyin_creator_mcp/browser/session.py
+index 70987c1..f6264f1 100644
+--- a/src/douyin_creator_mcp/browser/session.py
++++ b/src/douyin_creator_mcp/browser/session.py
+@@ -92,6 +92,11 @@ class BrowserSession:
+     def open_creator_video_page(self) -> Any:
+         return self.open_page(self.settings.douyin_creator_video_url)
+ 
++    def open_creator_data_center(self) -> Any:
++        return self.open_page(
++            "https://creator.douyin.com/creator-micro/data-center/operation"
++        )
++
+     def open_video_detail(self, url: str) -> Any:
+         return self.open_page(url)
+ 
+diff --git a/src/douyin_creator_mcp/cli.py b/src/douyin_creator_mcp/cli.py
+index 3b4a12d..cbba848 100644
+--- a/src/douyin_creator_mcp/cli.py
++++ b/src/douyin_creator_mcp/cli.py
+@@ -61,6 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
+     details.add_argument("--mode", choices=("visible", "background_first"), default="visible")
+     details.add_argument("--force", action="store_true")
+ 
++    overview = commands.add_parser("overview", help="读取账号流量入口、粉丝趋势和用户画像开放状态。")
++    overview.add_argument("--mode", choices=("visible", "background_first"), default="background_first")
++
+     videos = commands.add_parser("videos", help="查询本地作品列表。")
+     videos.add_argument("--limit", type=int, default=20)
+     videos.add_argument("--offset", type=int, default=0)
+@@ -233,6 +236,8 @@ def run_command(
+                 mode=args.mode,
+             )
+         )
++    if args.command == "overview":
++        return success_response(**service.get_account_overview(mode=args.mode))
+     if args.command == "videos":
+         return success_response(
+             **service.list_videos(limit=args.limit, offset=args.offset, sort=args.sort)
+@@ -270,6 +275,7 @@ def main(argv: Sequence[str] | None = None) -> int:
+         "login",
+         "sync",
+         "details",
++        "overview",
+     }:
+         print(f"平台合规提示：{PLATFORM_COMPLIANCE_NOTICE}", file=sys.stderr)
+     try:
+diff --git a/src/douyin_creator_mcp/services/browser_service.py b/src/douyin_creator_mcp/services/browser_service.py
+index a23b85c..ed14c3e 100644
+--- a/src/douyin_creator_mcp/services/browser_service.py
++++ b/src/douyin_creator_mcp/services/browser_service.py
+@@ -24,6 +24,8 @@ from ..browser.extractors import (
+     VERIFICATION_REQUIRED,
+     collect_all_video_cards,
+     detail_video_id_from_url,
++    extract_account_overview,
++    extract_creator_identity,
+     extract_detail_metrics,
+     extract_page_snapshot,
+ )
+@@ -606,6 +608,40 @@ class BrowserService:
+ 
+     # Query and analysis ----------------------------------------------
+ 
++    def get_account_overview(self, mode: str = "background_first") -> dict[str, Any]:
++        require_platform_risk_acknowledgement(self.settings.data_dir)
++        self._validate_mode(mode)
++        login_status = LOGGED_IN
++        try:
++            with self._browser_access():
++                session = self._get_session(headless=mode == "background_first")
++                home_page = session.open_creator_home()
++                snapshot = extract_page_snapshot(home_page)
++                login_status = snapshot["login_status"]
++                if login_status != LOGGED_IN:
++                    return {
++                        "status": "user_action_required",
++                        "login_status": login_status,
++                        "next_action": "请重新登录抖音创作者中心后再同步。",
++                    }
++                account_identity = extract_creator_identity(home_page)
++                page = session.open_creator_data_center()
++                overview = extract_account_overview(page)
++                if account_identity:
++                    overview["account_identity"] = account_identity
++                return {
++                    "status": "completed",
++                    "login_status": login_status,
++                    "captured_at": utc_now_iso(),
++                    **overview,
++                }
++        finally:
++            if self.settings.douyin_browser_auto_close and login_status not in {
++                LOGIN_REQUIRED,
++                VERIFICATION_REQUIRED,
++            }:
++                self.close_browser()
++
+     def list_videos(
+         self,
+         account_id: str = BROWSER_DEFAULT_ACCOUNT_ID,
+@@ -1002,6 +1038,7 @@ class BrowserService:
+                    s.five_second_completion_rate, s.completion_rate,
+                    s.average_watch_duration_seconds, s.like_count, s.collect_count,
+                    s.comment_count, s.share_count, s.follower_gain,
++                   s.raw_metric_json, s.missing_reason_json, s.quality,
+                    d.like_rate, d.collect_rate, d.comment_rate, d.share_rate,
+                    d.play_rate, d.interaction_rate, d.formula_version
+             FROM videos AS v

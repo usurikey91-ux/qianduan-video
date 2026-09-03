@@ -1,0 +1,1565 @@
+diff --git a/backend/api/v1/sunbird.py b/backend/api/v1/sunbird.py
+index 2406f94..05a55a4 100644
+--- a/backend/api/v1/sunbird.py
++++ b/backend/api/v1/sunbird.py
+@@ -10,13 +10,28 @@ from backend.schemas.common import ApiResponse, PaginationMeta
+ from backend.schemas.sunbird import (
+     SunbirdAccountBindRequest,
+     SunbirdAccountRead,
++    SunbirdAccountUpdateRequest,
+     SunbirdCheckRead,
+     SunbirdWorkRead,
+ )
+ from backend.services import sunbird_integration_service as service
++from backend.services.content_detection import recalculate_account_detections
+ 
+ router = APIRouter(prefix="/integrations/sunbird", tags=["sunbird-integration"])
+ 
++_PLATFORM_LABELS = {
++    "douyin": "抖音",
++    "xiaohongshu": "小红书",
++    "bilibili": "哔哩哔哩",
++    "kuaishou": "快手",
++}
++
++
++def _account_read(account) -> SunbirdAccountRead:
++    return SunbirdAccountRead.model_validate(account).model_copy(
++        update={"monitoring_rules": service.account_monitoring_rules(account)}
++    )
++
+ 
+ @router.get("/platforms", response_model=ApiResponse[list[dict]])
+ async def list_sunbird_platforms(db: AsyncSession = Depends(get_db)) -> ApiResponse:
+@@ -36,7 +51,7 @@ async def list_sunbird_platforms(db: AsyncSession = Depends(get_db)) -> ApiRespo
+             platform,
+             {
+                 "id": platform,
+-                "label": platform,
++                "label": _PLATFORM_LABELS.get(platform, platform),
+                 "source_id": source.id,
+                 "command": config.get("command"),
+                 "status": "configured",
+@@ -57,7 +72,7 @@ async def bind_sunbird_account(
+     return ApiResponse.ok(
+         {
+             "created": created,
+-            "account": SunbirdAccountRead.model_validate(account).model_dump(),
++            "account": _account_read(account).model_dump(),
+             "schedule": (
+                 {
+                     "id": schedule.id,
+@@ -82,7 +97,7 @@ async def list_sunbird_accounts(
+         db, platform=platform, page=page, limit=limit
+     )
+     return ApiResponse.ok(
+-        data=[SunbirdAccountRead.model_validate(account) for account in accounts],
++        data=[_account_read(account) for account in accounts],
+         meta=PaginationMeta(total=total, page=page, limit=limit, pages=max(1, -(-total // limit))),
+     )
+ 
+@@ -112,17 +127,56 @@ async def check_sunbird_account(account_id: str, db: AsyncSession = Depends(get_
+     )
+ 
+ 
++@router.delete("/accounts/{account_id}", response_model=ApiResponse[dict])
++async def remove_sunbird_account(
++    account_id: str,
++    db: AsyncSession = Depends(get_db),
++) -> ApiResponse:
++    account = await service.get_account(db, account_id)
++    if account is None:
++        raise HTTPException(status_code=404, detail="Account not found")
++    result = await service.remove_account(db, account)
++    await db.commit()
++    return ApiResponse.ok(result)
++
++
++@router.patch("/accounts/{account_id}", response_model=ApiResponse[SunbirdAccountRead])
++async def update_sunbird_account(
++    account_id: str,
++    body: SunbirdAccountUpdateRequest,
++    db: AsyncSession = Depends(get_db),
++) -> ApiResponse:
++    account = await service.get_account(db, account_id)
++    if account is None:
++        raise HTTPException(status_code=404, detail="Account not found")
++    if body.display_name is not None:
++        account.display_name = body.display_name.strip()
++        account.raw_profile = {**(account.raw_profile or {}), "display_name_custom": True}
++    if body.monitoring_rules is not None:
++        await service.apply_monitoring_rules(
++            db, account, body.monitoring_rules.model_dump()
++        )
++        await recalculate_account_detections(db, account.id)
++    if body.enabled is not None:
++        await service.set_monitoring_enabled(db, account, body.enabled)
++    await db.commit()
++    await db.refresh(account)
++    return ApiResponse.ok(_account_read(account))
++
++
+ @router.get("/works", response_model=ApiResponse[list[SunbirdWorkRead]])
+ async def list_sunbird_works(
+     status: str | None = None,
+     priority: bool | None = None,
+     account_id: str | None = None,
++    platform: str | None = None,
+     page: int = Query(1, ge=1),
+     limit: int = Query(50, ge=1, le=200),
+     db: AsyncSession = Depends(get_db),
+ ) -> ApiResponse:
+     contracts, total = await service.list_work_contracts(
+-        db, status=status, priority=priority, account_id=account_id, page=page, limit=limit
++        db, status=status, priority=priority, account_id=account_id,
++        platform=platform, page=page, limit=limit
+     )
+     return ApiResponse.ok(
+         data=[SunbirdWorkRead.model_validate(item) for item in contracts],
+diff --git a/backend/channels/opencli_channel.py b/backend/channels/opencli_channel.py
+index 8a002fb..817cfb5 100644
+--- a/backend/channels/opencli_channel.py
++++ b/backend/channels/opencli_channel.py
+@@ -453,6 +453,26 @@ class OpenCLIChannel(AbstractChannel):
+             if stderr_text:
+                 logger.warning("opencli stderr | %s", stderr_text[:500])
+ 
++            if returncode != 0:
++                # CDP can detach transiently while a page is being handled.
++                # Retry this known transport failure once; do not repeat
++                # arbitrary command failures that may have side effects.
++                if "Detached while handling command" in stderr_text:
++                    logger.warning("opencli detached from CDP; retrying once")
++                    await asyncio.sleep(1)
++                    try:
++                        if mode == "cdp":
++                            pre_tab_ids = await _snapshot_tab_ids(cdp_endpoint)
++                        returncode, stdout_text, stderr_text = await _run_opencli(cmd, env)
++                    except Exception as exc:
++                        logger.error("opencli retry failed | %s", exc)
++                        return ChannelResult.fail(f"opencli retry failed: {exc}")
++                    finally:
++                        if mode == "cdp":
++                            await _cleanup_cdp_tabs(cdp_endpoint, pre_tab_ids)
++                    if stderr_text:
++                        logger.warning("opencli retry stderr | %s", stderr_text[:500])
++
+             if returncode != 0:
+                 logger.error("opencli exit=%d | stderr=%s", returncode, stderr_text[:500])
+                 return ChannelResult.fail(f"opencli exited with code {returncode}: {stderr_text}")
+diff --git a/backend/config.py b/backend/config.py
+index 7e5ff0b..f9b235a 100644
+--- a/backend/config.py
++++ b/backend/config.py
+@@ -33,9 +33,9 @@ class Settings(BaseSettings):
+     api_key_enabled: bool = False
+     api_key: str = ""
+ 
+-    # MVP feature gates. Collection and snapshotting remain enabled; model
+-    # processing and outbound notifications require an explicit later opt-in.
+-    builtin_ai_enabled: bool = False
++    # AI runs when a source or task has an enabled agent configured. With no
++    # agent configuration the pipeline still skips this step safely.
++    builtin_ai_enabled: bool = True
+     notifications_enabled: bool = False
+ 
+     # Email
+diff --git a/backend/detector.py b/backend/detector.py
+index b84b2b0..a382815 100644
+--- a/backend/detector.py
++++ b/backend/detector.py
+@@ -8,6 +8,7 @@ from typing import Iterable
+ 
+ 
+ BASELINE_WINDOW = 20
++MINIMUM_BASELINE = 5
+ HOT_MULTIPLE = 3.0
+ VERY_HOT_MULTIPLE = 5.0
+ 
+@@ -48,8 +49,10 @@ def _parse_metric(value: int | None) -> int | None:
+     return parsed if parsed >= 0 else None
+ 
+ 
+-def _latest_window(values: Iterable[int | None]) -> tuple[list[int], int, int]:
+-    raw_window = list(islice(values, BASELINE_WINDOW))
++def _latest_window(
++    values: Iterable[int | None], baseline_window: int = BASELINE_WINDOW
++) -> tuple[list[int], int, int]:
++    raw_window = list(islice(values, baseline_window))
+     parsed_values: list[int] = []
+     for value in raw_window:
+         parsed = _parse_metric(value)
+@@ -64,6 +67,10 @@ def evaluate_public_metric(
+     current_value: int | None,
+     baseline_values: Iterable[int | None],
+     finalized: bool,
++    baseline_window: int = BASELINE_WINDOW,
++    minimum_baseline: int = MINIMUM_BASELINE,
++    hot_multiple: float = HOT_MULTIPLE,
++    very_hot_multiple: float = VERY_HOT_MULTIPLE,
+ ) -> DetectionDecision:
+     """Compare a work with its account's latest 20 valid prior works.
+ 
+@@ -74,7 +81,7 @@ def evaluate_public_metric(
+     incomplete; later works never substitute for it.
+     """
+     baseline_sample, baseline_size, baseline_missing_count = _latest_window(
+-        baseline_values
++        baseline_values, baseline_window
+     )
+     parsed_current_value = _parse_metric(current_value)
+ 
+@@ -88,8 +95,8 @@ def evaluate_public_metric(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+             reasons=("尚未到达发布后7天的最终观察窗口",),
+@@ -105,14 +112,14 @@ def evaluate_public_metric(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+             reasons=("当前作品缺少已选定的公开指标",),
+         )
+ 
+-    if baseline_size < BASELINE_WINDOW:
++    if baseline_size < minimum_baseline:
+         return DetectionDecision(
+             status="insufficient_data",
+             metric_name=metric_name,
+@@ -122,11 +129,11 @@ def evaluate_public_metric(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+-            reasons=(f"只取到最近 {baseline_size} 条作品，需要完整的 20 条",),
++            reasons=(f"只取到 {baseline_size} 条历史作品，至少需要 {minimum_baseline} 条",),
+         )
+ 
+     if baseline_missing_count:
+@@ -139,12 +146,12 @@ def evaluate_public_metric(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+             reasons=(
+-                f"最近 20 条作品中有 {baseline_missing_count} 条缺少主公开指标，"
++                f"最近 {baseline_size} 条作品中有 {baseline_missing_count} 条缺少主公开指标，"
+                 "不使用更早作品补位",
+             ),
+         )
+@@ -160,19 +167,19 @@ def evaluate_public_metric(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+             reasons=("账号日常中位数为零，无法计算相对倍数",),
+         )
+ 
+     relative_multiple = parsed_current_value / baseline
+-    if relative_multiple >= VERY_HOT_MULTIPLE:
++    if relative_multiple >= very_hot_multiple:
+         status = "very_hot"
+         enters_analysis = True
+         priority_analysis = True
+-    elif relative_multiple >= HOT_MULTIPLE:
++    elif relative_multiple >= hot_multiple:
+         status = "hot"
+         enters_analysis = True
+         priority_analysis = False
+@@ -190,14 +197,14 @@ def evaluate_public_metric(
+         baseline_size=baseline_size,
+         baseline_missing_count=baseline_missing_count,
+         relative_multiple=relative_multiple,
+-        hot_multiple=HOT_MULTIPLE,
+-        very_hot_multiple=VERY_HOT_MULTIPLE,
++        hot_multiple=hot_multiple,
++        very_hot_multiple=very_hot_multiple,
+         enters_analysis=enters_analysis,
+         priority_analysis=priority_analysis,
+         reasons=(
+             f"{metric_name}={parsed_current_value}，账号日常中位数={baseline:g}",
+-            f"相对倍数={relative_multiple:.2f}，火={HOT_MULTIPLE:g}倍，"
+-            f"特别火={VERY_HOT_MULTIPLE:g}倍",
++            f"相对倍数={relative_multiple:.2f}，火={hot_multiple:g}倍，"
++            f"特别火={very_hot_multiple:g}倍",
+         ),
+     )
+ 
+@@ -225,6 +232,10 @@ def evaluate_public_metrics(
+     current_values: dict[str, int | None],
+     baseline_values: Iterable[dict[str, int | None]],
+     finalized: bool,
++    baseline_window: int = BASELINE_WINDOW,
++    minimum_baseline: int = MINIMUM_BASELINE,
++    hot_multiple: float = HOT_MULTIPLE,
++    very_hot_multiple: float = VERY_HOT_MULTIPLE,
+ ) -> DetectionDecision:
+     """Classify a work using whatever public metrics are actually available.
+ 
+@@ -236,7 +247,7 @@ def evaluate_public_metrics(
+     most useful public interaction signals when views are unavailable.
+     """
+     names = tuple(dict.fromkeys(metric_names))
+-    raw_baseline = list(islice(baseline_values, BASELINE_WINDOW))
++    raw_baseline = list(islice(baseline_values, baseline_window))
+     current_metrics = _parse_metric_mapping(current_values, names)
+     baseline_size = len(raw_baseline)
+     parsed_baselines = [_parse_metric_mapping(row, names) for row in raw_baseline]
+@@ -252,8 +263,8 @@ def evaluate_public_metrics(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+             reasons=("尚未到达发布后7天的最终观察窗口",),
+@@ -261,7 +272,7 @@ def evaluate_public_metrics(
+             component_multiples={},
+         )
+ 
+-    if baseline_size < BASELINE_WINDOW:
++    if baseline_size < minimum_baseline:
+         return DetectionDecision(
+             status="insufficient_data",
+             metric_name="public_composite",
+@@ -271,11 +282,11 @@ def evaluate_public_metrics(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+-            reasons=(f"只取到最近 {baseline_size} 条作品，需要完整的 20 条",),
++            reasons=(f"只取到 {baseline_size} 条历史作品，至少需要 {minimum_baseline} 条",),
+             metric_values=current_metrics,
+             component_multiples={},
+         )
+@@ -290,8 +301,8 @@ def evaluate_public_metrics(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+             reasons=("当前作品没有可用的公开互动指标",),
+@@ -321,8 +332,8 @@ def evaluate_public_metrics(
+             baseline_size=baseline_size,
+             baseline_missing_count=baseline_missing_count,
+             relative_multiple=None,
+-            hot_multiple=HOT_MULTIPLE,
+-            very_hot_multiple=VERY_HOT_MULTIPLE,
++            hot_multiple=hot_multiple,
++            very_hot_multiple=very_hot_multiple,
+             enters_analysis=False,
+             priority_analysis=False,
+             reasons=("公开指标存在，但没有足够的历史样本形成可比较基线",),
+@@ -339,9 +350,9 @@ def evaluate_public_metrics(
+         / total_weight
+     )
+     representative = max(component_multiples, key=component_multiples.get)
+-    if relative_multiple >= VERY_HOT_MULTIPLE:
++    if relative_multiple >= very_hot_multiple:
+         status, enters_analysis, priority_analysis = "very_hot", True, True
+-    elif relative_multiple >= HOT_MULTIPLE:
++    elif relative_multiple >= hot_multiple:
+         status, enters_analysis, priority_analysis = "hot", True, False
+     else:
+         status, enters_analysis, priority_analysis = "observing", False, False
+@@ -355,13 +366,13 @@ def evaluate_public_metrics(
+         baseline_size=baseline_size,
+         baseline_missing_count=baseline_missing_count,
+         relative_multiple=relative_multiple,
+-        hot_multiple=HOT_MULTIPLE,
+-        very_hot_multiple=VERY_HOT_MULTIPLE,
++        hot_multiple=hot_multiple,
++        very_hot_multiple=very_hot_multiple,
+         enters_analysis=enters_analysis,
+         priority_analysis=priority_analysis,
+         reasons=(
+             f"综合 {len(component_multiples)} 个可用公开指标，代表指标={representative}",
+-            f"综合相对倍数={relative_multiple:.2f}，火={HOT_MULTIPLE:g}倍，特别火={VERY_HOT_MULTIPLE:g}倍",
++            f"综合相对倍数={relative_multiple:.2f}，火={hot_multiple:g}倍，特别火={very_hot_multiple:g}倍",
+         ),
+         metric_values=current_metrics,
+         component_multiples=component_multiples,
+diff --git a/backend/main.py b/backend/main.py
+index a9dba1f..bdc9273 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -178,6 +178,11 @@ def create_app() -> FastAPI:
+     async def health() -> dict:
+         return {"status": "ok", "version": "0.1.0", "task_executor": settings.task_executor}
+ 
++    # Keep the API-prefixed health URL aligned with frontend node/browser checks.
++    @app.get("/api/v1/health")
++    async def api_health() -> dict:
++        return await health()
++
+     return app
+ 
+ 
+diff --git a/backend/pipeline/ai_processor.py b/backend/pipeline/ai_processor.py
+index fd2bf8f..aa1b9f9 100644
+--- a/backend/pipeline/ai_processor.py
++++ b/backend/pipeline/ai_processor.py
+@@ -3,13 +3,14 @@
+ from typing import Any
+ 
+ from backend.models.record import CollectedRecord
++from backend.processors.base import ProcessingResult
+ from backend.processors.registry import get_processor
+ 
+ 
+ async def process_with_ai(
+     records: list[CollectedRecord],
+     ai_config: dict[str, Any] | None,
+-) -> None:
++) -> ProcessingResult:
+     """Enrich records with AI processing in-place.
+ 
+     ai_config keys:
+@@ -19,13 +20,13 @@ async def process_with_ai(
+         ...processor-specific options
+     """
+     if not ai_config or not records:
+-        return
++        return ProcessingResult(success=True)
+ 
+     processor_type = ai_config.get("processor_type", "claude")
+     try:
+         processor = get_processor(processor_type)
+     except ValueError:
+-        return
++        return ProcessingResult(success=False, error=f"Unknown processor: {processor_type}")
+ 
+     result = await processor.process(
+         records=records,
+@@ -34,5 +35,9 @@ async def process_with_ai(
+     )
+ 
+     for record, enrichment in zip(records, result.enrichments):
+-        record.ai_enrichment = enrichment
+-        record.status = "ai_processed"
++        # Failed items stay normalized so the UI and retry logic do not report
++        # an AI success for an error payload.
++        if isinstance(enrichment, dict) and "error" not in enrichment:
++            record.ai_enrichment = enrichment
++            record.status = "ai_processed"
++    return result
+diff --git a/backend/pipeline/content_snapshotter.py b/backend/pipeline/content_snapshotter.py
+index e483296..6971745 100644
+--- a/backend/pipeline/content_snapshotter.py
++++ b/backend/pipeline/content_snapshotter.py
+@@ -115,6 +115,21 @@ def _parse_published_at(value: Any) -> datetime | None:
+     return parsed
+ 
+ 
++def _xiaohongshu_published_at(work_id: str) -> datetime | None:
++    """Decode the creation time stored in a Xiaohongshu 24-char note id."""
++    value = str(work_id or "").strip().lower()
++    if not re.fullmatch(r"[0-9a-f]{24}", value):
++        return None
++    try:
++        parsed = datetime.fromtimestamp(int(value[:8], 16), tz=timezone.utc)
++    except (ValueError, OSError, OverflowError):
++        return None
++    now = _utcnow()
++    if parsed.year < 2013 or parsed > now:
++        return None
++    return parsed
++
++
+ def _source_platform(source: DataSource) -> str:
+     site = source.channel_config.get("site") if isinstance(source.channel_config, dict) else None
+     return str(site or source.channel_type or "unknown").lower()
+@@ -245,7 +260,9 @@ async def store_content_snapshots(
+             else:
+                 account.source_id = source_id
+                 account.handle = handle or account.handle
+-                account.display_name = display_name or account.display_name
++                profile = account.raw_profile if isinstance(account.raw_profile, dict) else {}
++                if not profile.get("display_name_custom"):
++                    account.display_name = display_name or account.display_name
+                 account.profile_url = profile_url or account.profile_url
+             account_cache[account_external_id] = account
+ 
+@@ -262,6 +279,10 @@ async def store_content_snapshots(
+             )
+             work = result.scalar_one_or_none()
+             published_raw = normalized.get("published_at") or None
++            if not published_raw and platform == "xiaohongshu":
++                inferred_published_at = _xiaohongshu_published_at(external_work_id)
++                if inferred_published_at is not None:
++                    published_raw = inferred_published_at.isoformat()
+             if work is None:
+                 is_new_work = True
+                 work = ContentWork(
+diff --git a/backend/pipeline/pipeline.py b/backend/pipeline/pipeline.py
+index 5b41e03..b897e11 100644
+--- a/backend/pipeline/pipeline.py
++++ b/backend/pipeline/pipeline.py
+@@ -188,7 +188,7 @@ async def run_pipeline(
+                 task_row.status = "ai_processing"
+                 await session.commit()
+         try:
+-            await ai_processor.process_with_ai(new_records, effective_ai_config)
++            ai_result = await ai_processor.process_with_ai(new_records, effective_ai_config)
+             # Persist enrichments — new_records are detached after step3 session closed
+             from backend.models.record import CollectedRecord
+             async with AsyncSessionLocal() as session:
+@@ -199,13 +199,17 @@ async def run_pipeline(
+                             db_rec.ai_enrichment = rec.ai_enrichment
+                             db_rec.status = "ai_processed"
+                 await session.commit()
+-            ai_count = len(new_records)
++            ai_count = sum(
++                1 for rec in new_records
++                if isinstance(rec.ai_enrichment, dict) and "error" not in rec.ai_enrichment
++            )
+             logger.info("[task:%s] step4/ai done | processed=%d", task_id, ai_count)
+             if run_id:
+                 await events.emit(
+                     run_id, "ai_process",
+-                    f"AI 处理完成 | {ai_count} 条",
+-                    detail={"processed": ai_count},
++                    f"AI 处理完成 | 成功 {ai_count}/{len(new_records)} 条",
++                    level="info" if ai_result.success and ai_count == len(new_records) else "warning",
++                    detail={"processed": ai_count, "total": len(new_records), "error": ai_result.error},
+                 )
+         except Exception as exc:
+             logger.warning("[task:%s] step4/ai failed | %s", task_id, exc)
+diff --git a/backend/processors/claude_processor.py b/backend/processors/claude_processor.py
+index 720e767..b40edcb 100644
+--- a/backend/processors/claude_processor.py
++++ b/backend/processors/claude_processor.py
+@@ -74,7 +74,10 @@ class ClaudeProcessor(AbstractProcessor):
+                 logger.error("claude error [%d/%d] | %s", i + 1, len(records), exc)
+                 enrichments.append({"error": str(exc)})
+ 
+-        logger.info("claude processor done | success=%d errors=%d",
+-                    sum(1 for e in enrichments if "error" not in e),
+-                    sum(1 for e in enrichments if "error" in e))
+-        return ProcessingResult(success=True, enrichments=enrichments)
++        errors = sum(1 for e in enrichments if "error" in e)
++        logger.info("claude processor done | success=%d errors=%d", len(enrichments) - errors, errors)
++        return ProcessingResult(
++            success=errors == 0,
++            enrichments=enrichments,
++            error=f"{errors}/{len(records)} requests failed" if errors else None,
++        )
+diff --git a/backend/processors/local_processor.py b/backend/processors/local_processor.py
+index cd232a4..be351f1 100644
+--- a/backend/processors/local_processor.py
++++ b/backend/processors/local_processor.py
+@@ -70,4 +70,9 @@ class LocalProcessor(AbstractProcessor):
+                 except Exception as exc:
+                     enrichments.append({"error": str(exc)})
+ 
+-        return ProcessingResult(success=True, enrichments=enrichments)
++        errors = sum(1 for e in enrichments if "error" in e)
++        return ProcessingResult(
++            success=errors == 0,
++            enrichments=enrichments,
++            error=f"{errors}/{len(records)} requests failed" if errors else None,
++        )
+diff --git a/backend/processors/openai_processor.py b/backend/processors/openai_processor.py
+index 90d6bc6..ca2fc1e 100644
+--- a/backend/processors/openai_processor.py
++++ b/backend/processors/openai_processor.py
+@@ -78,7 +78,10 @@ class OpenAIProcessor(AbstractProcessor):
+                 logger.error("openai error [%d/%d] | %s", i + 1, len(records), exc)
+                 enrichments.append({"error": str(exc)})
+ 
+-        logger.info("openai processor done | success=%d errors=%d",
+-                    sum(1 for e in enrichments if "error" not in e),
+-                    sum(1 for e in enrichments if "error" in e))
+-        return ProcessingResult(success=True, enrichments=enrichments)
++        errors = sum(1 for e in enrichments if "error" in e)
++        logger.info("openai processor done | success=%d errors=%d", len(enrichments) - errors, errors)
++        return ProcessingResult(
++            success=errors == 0,
++            enrichments=enrichments,
++            error=f"{errors}/{len(records)} requests failed" if errors else None,
++        )
+diff --git a/backend/schemas/sunbird.py b/backend/schemas/sunbird.py
+index dec3b4b..d7468f4 100644
+--- a/backend/schemas/sunbird.py
++++ b/backend/schemas/sunbird.py
+@@ -1,11 +1,27 @@
+ from datetime import datetime
+ from typing import Any
+ 
+-from pydantic import BaseModel, Field
++from pydantic import BaseModel, Field, model_validator
+ 
+ from backend.schemas.common import UTCModel
+ 
+ 
++class SunbirdMonitoringRules(BaseModel):
++    reference_work_count: int = Field(20, ge=5, le=50)
++    hot_multiple: float = Field(3.0, ge=1.5, le=10.0)
++    very_hot_multiple: float = Field(5.0, ge=2.0, le=20.0)
++    interval_hours: int = Field(4)
++    inherit_global: bool = True
++
++    @model_validator(mode="after")
++    def validate_rules(self):
++        if self.interval_hours not in {1, 2, 4, 8, 12, 24}:
++            raise ValueError("interval_hours must be one of 1, 2, 4, 8, 12, 24")
++        if self.very_hot_multiple <= self.hot_multiple:
++            raise ValueError("very_hot_multiple must be greater than hot_multiple")
++        return self
++
++
+ class SunbirdAccountBindRequest(BaseModel):
+     platform: str = Field(min_length=1, max_length=64)
+     external_account_id: str = Field(min_length=1, max_length=255)
+@@ -16,6 +32,7 @@ class SunbirdAccountBindRequest(BaseModel):
+     command: str | None = Field(None, max_length=255)
+     args: dict[str, Any] = Field(default_factory=dict)
+     enabled: bool = True
++    monitoring_rules: SunbirdMonitoringRules | None = None
+ 
+ 
+ class SunbirdAccountRead(UTCModel):
+@@ -34,10 +51,23 @@ class SunbirdAccountRead(UTCModel):
+     last_success_at: datetime | None = None
+     last_error_code: str | None = None
+     last_error_message: str | None = None
++    monitoring_rules: dict[str, Any] = Field(default_factory=dict)
+ 
+     model_config = {"from_attributes": True}
+ 
+ 
++class SunbirdAccountUpdateRequest(BaseModel):
++    display_name: str | None = Field(None, min_length=1, max_length=255)
++    monitoring_rules: SunbirdMonitoringRules | None = None
++    enabled: bool | None = None
++
++    @model_validator(mode="after")
++    def validate_update(self):
++        if self.display_name is None and self.monitoring_rules is None and self.enabled is None:
++            raise ValueError("display_name, monitoring_rules or enabled is required")
++        return self
++
++
+ class SunbirdCheckRead(BaseModel):
+     account_id: str
+     task_id: str
+diff --git a/backend/services/content_detection.py b/backend/services/content_detection.py
+index ea4f6ff..ff6844a 100644
+--- a/backend/services/content_detection.py
++++ b/backend/services/content_detection.py
+@@ -3,11 +3,16 @@
+ from datetime import timedelta
+ from typing import Any
+ 
+-from sqlalchemy import select
++from sqlalchemy import and_, or_, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from backend.detector import evaluate_public_metrics
+-from backend.models.content_monitor import ContentWork, DetectionResult, EngagementSnapshot
++from backend.models.content_monitor import (
++    ContentAccount,
++    ContentWork,
++    DetectionResult,
++    EngagementSnapshot,
++)
+ 
+ 
+ FINAL_WINDOW = timedelta(days=7)
+@@ -22,6 +27,41 @@ _METRIC_ATTRIBUTES = {
+     "share_count": "share_count",
+ }
+ 
++DEFAULT_MONITORING_RULES = {
++    "reference_work_count": 20,
++    "hot_multiple": 3.0,
++    "very_hot_multiple": 5.0,
++    "interval_hours": 4,
++    "inherit_global": True,
++}
++MINIMUM_REFERENCE_WORKS = 5
++
++
++def monitoring_rules_for_account(account: ContentAccount | None) -> dict[str, Any]:
++    rules = dict(DEFAULT_MONITORING_RULES)
++    raw_profile = account.raw_profile if account and isinstance(account.raw_profile, dict) else {}
++    stored = raw_profile.get("monitoring_rules")
++    if isinstance(stored, dict):
++        rules.update(stored)
++    rules["reference_work_count"] = max(5, min(50, int(rules["reference_work_count"])))
++    rules["hot_multiple"] = max(1.5, min(10.0, float(rules["hot_multiple"])))
++    rules["very_hot_multiple"] = max(2.0, min(20.0, float(rules["very_hot_multiple"])))
++    if rules["very_hot_multiple"] <= rules["hot_multiple"]:
++        rules["very_hot_multiple"] = min(20.0, rules["hot_multiple"] + 0.5)
++    rules["interval_hours"] = int(rules["interval_hours"])
++    rules["inherit_global"] = bool(rules.get("inherit_global", True))
++    return rules
++
++
++def _prior_work_filter(work: ContentWork):
++    return or_(
++        ContentWork.published_at < work.published_at,
++        and_(
++            ContentWork.published_at == work.published_at,
++            ContentWork.created_at < work.created_at,
++        ),
++    )
++
+ 
+ def configured_metrics(source_config: dict[str, Any]) -> list[str] | None:
+     """Read explicitly verified metrics, or enable all supported public metrics."""
+@@ -80,9 +120,9 @@ async def evaluate_final_snapshot(
+ ) -> DetectionResult | None:
+     """Evaluate one work only after its final seven-day snapshot exists.
+ 
+-    The baseline is the account's 20 most recent prior works by publication
+-    time. Every one of those works must have a final snapshot and the selected
+-    metric; no content-type or suspected-promotion filter is applied.
++    The baseline contains only prior works and explicitly excludes the current
++    work. Accounts with 5..N prior works are evaluated with an actual-sample
++    marker; fewer than 5 remain insufficient.
+     """
+     selected_metrics = metric_names or ([metric_name] if metric_name else list(_METRIC_ATTRIBUTES))
+     if not selected_metrics or any(name not in _METRIC_ATTRIBUTES for name in selected_metrics):
+@@ -96,27 +136,33 @@ async def evaluate_final_snapshot(
+         return None
+     if snapshot.collected_at < work.published_at + FINAL_WINDOW:
+         return None
++    account = await session.get(ContentAccount, work.account_id)
++    rules = monitoring_rules_for_account(account)
+ 
+     works_result = await session.execute(
+         select(ContentWork)
+         .where(
+             ContentWork.account_id == work.account_id,
+             ContentWork.id != work.id,
++            _prior_work_filter(work),
+         )
+         .order_by(ContentWork.published_at.desc().nullslast(), ContentWork.created_at.desc())
+-        .limit(20)
++        .limit(rules["reference_work_count"])
+     )
+     baseline_works = list(works_result.scalars().all())
+     baseline_values: list[dict[str, int | None]] = []
+     for baseline_work in baseline_works:
+         baseline_snapshot = await _final_snapshot_for_work(session, baseline_work)
+         baseline_values.append(_snapshot_metrics(baseline_snapshot, selected_metrics))
+-
+     decision = evaluate_public_metrics(
+         metric_names=selected_metrics,
+         current_values=_snapshot_metrics(snapshot, selected_metrics),
+         baseline_values=baseline_values,
+         finalized=True,
++        baseline_window=rules["reference_work_count"],
++        minimum_baseline=MINIMUM_REFERENCE_WORKS,
++        hot_multiple=rules["hot_multiple"],
++        very_hot_multiple=rules["very_hot_multiple"],
+     )
+ 
+     existing_result = await session.execute(
+@@ -145,7 +191,10 @@ async def evaluate_final_snapshot(
+     detection.enters_analysis = decision.enters_analysis
+     detection.priority_analysis = decision.priority_analysis
+     detection.status = decision.status
+-    detection.evidence = decision.evidence()
++    evidence = decision.evidence()
++    evidence["configured_reference_work_count"] = rules["reference_work_count"]
++    evidence["sample_shortfall"] = max(0, rules["reference_work_count"] - decision.baseline_size)
++    detection.evidence = evidence
+     await session.flush()
+     return detection
+ 
+@@ -156,7 +205,7 @@ async def evaluate_observed_snapshot(
+     snapshot_id: str,
+     metric_names: list[str] | None = None,
+ ) -> DetectionResult | None:
+-    """Classify an early snapshot against the account's latest 20 prior works.
++    """Classify an early snapshot against the account's configured prior works.
+ 
+     This is the fast path for the product goal: a newly discovered work can
+     enter the analysis queue as soon as its current public metrics are clearly
+@@ -174,15 +223,18 @@ async def evaluate_observed_snapshot(
+     work = await session.get(ContentWork, snapshot.work_id)
+     if work is None or work.published_at is None:
+         return None
++    account = await session.get(ContentAccount, work.account_id)
++    rules = monitoring_rules_for_account(account)
+ 
+     works_result = await session.execute(
+         select(ContentWork)
+         .where(
+             ContentWork.account_id == work.account_id,
+             ContentWork.id != work.id,
++            _prior_work_filter(work),
+         )
+         .order_by(ContentWork.published_at.desc().nullslast(), ContentWork.created_at.desc())
+-        .limit(20)
++        .limit(rules["reference_work_count"])
+     )
+     baseline_works = list(works_result.scalars().all())
+     baseline_values: list[dict[str, int | None]] = []
+@@ -196,12 +248,15 @@ async def evaluate_observed_snapshot(
+         baseline_values.append(
+             _snapshot_metrics(latest_result.scalar_one_or_none(), selected_metrics)
+         )
+-
+     decision = evaluate_public_metrics(
+         metric_names=selected_metrics,
+         current_values=_snapshot_metrics(snapshot, selected_metrics),
+         baseline_values=baseline_values,
+         finalized=True,
++        baseline_window=rules["reference_work_count"],
++        minimum_baseline=MINIMUM_REFERENCE_WORKS,
++        hot_multiple=rules["hot_multiple"],
++        very_hot_multiple=rules["very_hot_multiple"],
+     )
+     existing_result = await session.execute(
+         select(DetectionResult).where(
+@@ -232,6 +287,8 @@ async def evaluate_observed_snapshot(
+     evidence = decision.evidence()
+     evidence["finalized"] = False
+     evidence["observation_stage"] = "early_snapshot"
++    evidence["configured_reference_work_count"] = rules["reference_work_count"]
++    evidence["sample_shortfall"] = max(0, rules["reference_work_count"] - decision.baseline_size)
+     evidence["reasons"] = [
+         "基于当前公开数据快照的早期筛选，满 7 天后会用最终快照复核",
+         *evidence.get("reasons", []),
+@@ -239,3 +296,34 @@ async def evaluate_observed_snapshot(
+     detection.evidence = evidence
+     await session.flush()
+     return detection
++
++
++async def recalculate_account_detections(
++    session: AsyncSession, account_id: str, metric_names: list[str] | None = None
++) -> int:
++    """Re-evaluate every work from stored snapshots after a rule change."""
++    result = await session.execute(
++        select(ContentWork)
++        .where(ContentWork.account_id == account_id)
++        .order_by(ContentWork.published_at.asc().nullsfirst(), ContentWork.created_at.asc())
++    )
++    recalculated = 0
++    for work in result.scalars().all():
++        latest_result = await session.execute(
++            select(EngagementSnapshot)
++            .where(EngagementSnapshot.work_id == work.id)
++            .order_by(EngagementSnapshot.collected_at.desc())
++            .limit(1)
++        )
++        snapshot = latest_result.scalar_one_or_none()
++        if snapshot is None:
++            continue
++        if await evaluate_observed_snapshot(
++            session, snapshot_id=snapshot.id, metric_names=metric_names
++        ):
++            recalculated += 1
++        if work.published_at and snapshot.collected_at >= work.published_at + FINAL_WINDOW:
++            await evaluate_final_snapshot(
++                session, snapshot_id=snapshot.id, metric_names=metric_names
++            )
++    return recalculated
+diff --git a/backend/services/sunbird_integration_service.py b/backend/services/sunbird_integration_service.py
+index ca67cde..9fcecdb 100644
+--- a/backend/services/sunbird_integration_service.py
++++ b/backend/services/sunbird_integration_service.py
+@@ -1,8 +1,16 @@
+ """Small, replaceable contract between the content workbench and OpenCLI Admin."""
+ 
+ from datetime import UTC, datetime
++import asyncio
++import html
++import json
++import re
++import shutil
++import subprocess
++import tempfile
+ from typing import Any
+ 
++import httpx
+ from sqlalchemy import func, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ from sqlalchemy.orm import selectinload
+@@ -11,7 +19,7 @@ from backend.models.content_monitor import ContentAccount, ContentWork
+ from backend.models.schedule import CronSchedule
+ from backend.models.source import DataSource
+ from backend.schemas.sunbird import SunbirdAccountBindRequest
+-from backend.services import content_account_service, task_service
++from backend.services import content_account_service, content_detection, task_service
+ 
+ DOUYIN_USER_VIDEOS_SOURCE_NAME = "Content Workbench · Douyin public works"
+ LEGACY_DOUYIN_USER_VIDEOS_SOURCE_NAME = "Sunbird · Douyin public works"
+@@ -28,6 +36,186 @@ DOUYIN_USER_VIDEOS_CONFIG = {
+     "content_monitoring": {},
+ }
+ 
++_INTERVAL_CRON = {
++    1: "0 * * * *",
++    2: "0 */2 * * *",
++    4: "0 */4 * * *",
++    8: "0 */8 * * *",
++    12: "0 */12 * * *",
++    24: "0 0 * * *",
++}
++
++
++def account_monitoring_rules(account: ContentAccount) -> dict[str, Any]:
++    return content_detection.monitoring_rules_for_account(account)
++
++
++async def _account_schedule(
++    session: AsyncSession, account: ContentAccount
++) -> CronSchedule | None:
++    if not account.collection_source_id:
++        return None
++    result = await session.execute(
++        select(CronSchedule).where(CronSchedule.source_id == account.collection_source_id)
++    )
++    return next(
++        (
++            item
++            for item in result.scalars().all()
++            if isinstance(item.parameters, dict)
++            and item.parameters.get("sunbird_account_id") == account.id
++        ),
++        None,
++    )
++
++
++async def apply_monitoring_rules(
++    session: AsyncSession, account: ContentAccount, rules: dict[str, Any]
++) -> dict[str, Any]:
++    normalized = {**content_detection.DEFAULT_MONITORING_RULES, **rules}
++    # Validation normally happens in the request schema. Clamp again here so
++    # older stored values cannot break collection or classification.
++    normalized["reference_work_count"] = max(5, min(50, int(normalized["reference_work_count"])))
++    normalized["hot_multiple"] = max(1.5, min(10.0, float(normalized["hot_multiple"])))
++    normalized["very_hot_multiple"] = max(2.0, min(20.0, float(normalized["very_hot_multiple"])))
++    normalized["interval_hours"] = int(normalized["interval_hours"])
++    normalized["inherit_global"] = bool(normalized.get("inherit_global", True))
++    if normalized["interval_hours"] not in _INTERVAL_CRON:
++        raise ValueError("Unsupported inspection interval")
++    if normalized["very_hot_multiple"] <= normalized["hot_multiple"]:
++        raise ValueError("Very-hot multiple must be greater than hot multiple")
++    account.raw_profile = {
++        **(account.raw_profile or {}),
++        "monitoring_rules": normalized,
++    }
++    account.collection_args = {
++        **(account.collection_args or {}),
++        # Internal collection includes the candidate plus N possible prior works.
++        "limit": normalized["reference_work_count"] + 1,
++    }
++    schedule = await _account_schedule(session, account)
++    if schedule:
++        schedule.cron_expression = _INTERVAL_CRON[normalized["interval_hours"]]
++        schedule.parameters = {
++            **(schedule.parameters or {}),
++            **account.collection_args,
++            "sunbird_account_id": account.id,
++            "external_account_id": account.external_account_id,
++        }
++        if account.platform.lower() == "douyin":
++            schedule.parameters = {
++                **schedule.parameters,
++                "sec_uid": account.external_account_id,
++            }
++    await session.flush()
++    return normalized
++
++
++async def set_monitoring_enabled(
++    session: AsyncSession, account: ContentAccount, enabled: bool
++) -> None:
++    account.collection_enabled = bool(enabled)
++    account.collection_status = "ready" if enabled else "paused"
++    account.last_error_code = None
++    account.last_error_message = None
++    schedule = await _account_schedule(session, account)
++    if schedule:
++        schedule.enabled = bool(enabled)
++    await session.flush()
++
++
++def _clean_profile_name(value: str | None) -> str | None:
++    name = html.unescape(str(value or "")).strip()
++    if "的个人空间" in name:
++        name = name.split("的个人空间", 1)[0].strip()
++    for suffix in (
++        "的个人空间_哔哩哔哩_bilibili",
++        "的个人空间-哔哩哔哩",
++        " - 快手",
++        "- 快手",
++        " - 小红书",
++        "- 小红书",
++        "的抖音 - 抖音",
++        "的抖音-抖音",
++        "的抖音",
++    ):
++        if name.endswith(suffix):
++            name = name[: -len(suffix)].strip()
++    if (
++        not name
++        or name in {"抖音", "快手", "小红书", "哔哩哔哩"}
++        or "验证码" in name
++        or "你的生活兴趣社区" in name
++    ):
++        return None
++    return name[:255]
++
++
++async def _resolve_profile_name_with_opencli(profile_url: str) -> str | None:
++    executable = shutil.which("opencli.cmd") or shutil.which("opencli")
++    if not executable:
++        return None
++
++    def run() -> str | None:
++        with tempfile.TemporaryDirectory(prefix="sunbird-profile-") as workdir:
++            try:
++                completed = subprocess.run(
++                    [executable, "web", "read", "--url", profile_url, "-f", "json"],
++                    cwd=workdir,
++                    capture_output=True,
++                    text=True,
++                    encoding="utf-8",
++                    errors="replace",
++                    timeout=30,
++                    check=False,
++                )
++            except (OSError, subprocess.TimeoutExpired):
++                return None
++        if completed.returncode != 0:
++            return None
++        try:
++            rows = json.loads(completed.stdout)
++        except json.JSONDecodeError:
++            return None
++        if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
++            return None
++        return _clean_profile_name(rows[0].get("title"))
++
++    return await asyncio.to_thread(run)
++
++
++async def resolve_profile_display_name(platform: str, profile_url: str | None) -> str | None:
++    """Best-effort public profile nickname lookup; collection still works if blocked."""
++    if not profile_url:
++        return None
++    try:
++        async with httpx.AsyncClient(
++            timeout=8,
++            follow_redirects=True,
++            headers={"User-Agent": "Mozilla/5.0"},
++        ) as client:
++            response = await client.get(profile_url)
++            response.raise_for_status()
++    except (httpx.HTTPError, ValueError):
++        return await _resolve_profile_name_with_opencli(profile_url)
++
++    text = response.text
++    # Douyin and Xiaohongshu expose the public nickname in hydrated JSON.
++    for match in re.finditer(r'"nickname"\s*:\s*"((?:\\.|[^"\\])*)"', text):
++        try:
++            candidate = json.loads(f'"{match.group(1)}"')
++        except json.JSONDecodeError:
++            candidate = match.group(1)
++        cleaned = _clean_profile_name(candidate)
++        if cleaned:
++            return cleaned
++
++    for title in re.finditer(r"<title[^>]*>(.*?)</title>", text, re.IGNORECASE | re.DOTALL):
++        cleaned = _clean_profile_name(title.group(1))
++        if cleaned:
++            return cleaned
++    return await _resolve_profile_name_with_opencli(profile_url)
++
+ 
+ async def _get_platform_source(session: AsyncSession, platform: str) -> DataSource | None:
+     """Find an enabled OpenCLI source registered for a platform.
+@@ -115,8 +303,41 @@ async def _get_or_create_douyin_source(session: AsyncSession) -> DataSource:
+ async def bind_account(
+     session: AsyncSession, body: SunbirdAccountBindRequest
+ ) -> tuple[ContentAccount, CronSchedule | None, bool]:
++    existing_result = await session.execute(
++        select(ContentAccount).where(
++            ContentAccount.platform == body.platform.lower(),
++            ContentAccount.external_account_id == body.external_account_id,
++        )
++    )
++    existing_account = existing_result.scalar_one_or_none()
++    existing_profile = (
++        existing_account.raw_profile
++        if existing_account and isinstance(existing_account.raw_profile, dict)
++        else {}
++    )
++    custom_name = bool(existing_profile.get("display_name_custom"))
++    if custom_name:
++        body = body.model_copy(update={"display_name": None})
++    elif not body.display_name and body.profile_url:
++        resolved_name = await resolve_profile_display_name(body.platform, body.profile_url)
++        if resolved_name:
++            body = body.model_copy(update={"display_name": resolved_name})
+     items, created = await content_account_service.import_accounts(session, [body])
+     account = items[0]
++    existing_rules = existing_profile.get("monitoring_rules")
++    requested_rules = (
++        {**content_detection.DEFAULT_MONITORING_RULES, **existing_rules}
++        if existing_account is not None and isinstance(existing_rules, dict)
++        else (
++            body.monitoring_rules.model_dump()
++            if body.monitoring_rules is not None
++            else account_monitoring_rules(account)
++        )
++    )
++    account.raw_profile = {
++        **(account.raw_profile or {}),
++        "monitoring_rules": requested_rules,
++    }
+     if not account.display_name or account.display_name in {
+         LEGACY_DOUYIN_USER_VIDEOS_SOURCE_NAME,
+         DOUYIN_USER_VIDEOS_SOURCE_NAME,
+@@ -157,6 +378,7 @@ async def bind_account(
+             **(source.channel_config.get("args") or {}),
+             **body.args,
+             "external_account_id": account.external_account_id,
++            "limit": requested_rules["reference_work_count"] + 1,
+         }
+         if platform == "douyin":
+             collection_args["sec_uid"] = account.external_account_id
+@@ -195,7 +417,7 @@ async def bind_account(
+             schedule = CronSchedule(
+                 source_id=source.id,
+                 name=f"Content benchmark {account.display_name or account.external_account_id}",
+-                cron_expression="0 */4 * * *",
++                cron_expression=_INTERVAL_CRON[requested_rules["interval_hours"]],
+                 timezone="UTC",
+                 parameters=params,
+                 enabled=body.enabled,
+@@ -205,6 +427,7 @@ async def bind_account(
+             schedule.name = f"Content benchmark {account.display_name or account.external_account_id}"
+             schedule.enabled = body.enabled
+             schedule.parameters = params
++            schedule.cron_expression = _INTERVAL_CRON[requested_rules["interval_hours"]]
+         await session.flush()
+     return account, schedule, bool(created)
+ 
+@@ -213,6 +436,34 @@ async def get_account(session: AsyncSession, account_id: str) -> ContentAccount
+     return await session.get(ContentAccount, account_id)
+ 
+ 
++async def remove_account(
++    session: AsyncSession, account: ContentAccount
++) -> dict[str, Any]:
++    """Permanently remove an account and all of its monitoring history."""
++    result = await session.execute(
++        select(CronSchedule).where(CronSchedule.source_id == account.collection_source_id)
++    )
++    schedules = [
++        item
++        for item in result.scalars().all()
++        if isinstance(item.parameters, dict)
++        and item.parameters.get("sunbird_account_id") == account.id
++    ]
++    work_count = await session.scalar(
++        select(func.count()).select_from(ContentWork).where(ContentWork.account_id == account.id)
++    )
++    for schedule in schedules:
++        await session.delete(schedule)
++    await session.delete(account)
++    await session.flush()
++    return {
++        "account_id": account.id,
++        "purged": True,
++        "history_preserved": False,
++        "works_affected": int(work_count or 0),
++    }
++
++
+ async def list_bound_accounts(
+     session: AsyncSession,
+     *,
+@@ -242,6 +493,8 @@ async def list_bound_accounts(
+ async def create_check_task(session: AsyncSession, account: ContentAccount):
+     if not account.collection_source_id or not account.collection_command:
+         raise ValueError("account collection is not configured")
++    if not account.collection_enabled:
++        raise ValueError("account monitoring is paused")
+     account.collection_status = "checking"
+     account.last_collection_at = datetime.now(UTC)
+     account.last_error_code = None
+@@ -310,6 +563,23 @@ def work_contract(work: ContentWork) -> dict[str, Any]:
+             key=lambda item: item.evaluated_at,
+             default=None,
+         )
++    relative_multiple = detection.relative_multiple if detection else None
++    if relative_multiple is not None:
++        if relative_multiple >= 5.0:
++            current_status = "very_hot"
++            current_priority = True
++        elif relative_multiple >= 3.0:
++            current_status = "hot"
++            current_priority = False
++        elif detection and detection.status in {"hot", "very_hot"}:
++            current_status = "observing"
++            current_priority = False
++        else:
++            current_status = detection.status if detection else "observing"
++            current_priority = False
++    else:
++        current_status = detection.status if detection else ("observing" if latest else "not_seen")
++        current_priority = bool(detection and detection.priority_analysis)
+     return {
+         "account": {
+             "id": work.account.id,
+@@ -326,9 +596,9 @@ def work_contract(work: ContentWork) -> dict[str, Any]:
+         "published_at": work.published_at,
+         "latest_public_metrics": latest.metrics if latest else {},
+         "final_public_metrics": latest.metrics if latest and detection else {},
+-        "relative_multiple": detection.relative_multiple if detection else None,
+-        "status": detection.status if detection else ("observing" if latest else "not_seen"),
+-        "priority": bool(detection and detection.priority_analysis),
++        "relative_multiple": relative_multiple,
++        "status": current_status,
++        "priority": current_priority,
+         "evidence": detection.evidence if detection else {},
+     }
+ 
+@@ -339,6 +609,7 @@ async def list_work_contracts(
+     status: str | None = None,
+     priority: bool | None = None,
+     account_id: str | None = None,
++    platform: str | None = None,
+     page: int = 1,
+     limit: int = 50,
+ ) -> tuple[list[dict[str, Any]], int]:
+@@ -358,6 +629,9 @@ async def list_work_contracts(
+         contracts = [item for item in contracts if item["priority"] == priority]
+     if account_id:
+         contracts = [item for item in contracts if item["account"]["id"] == account_id]
++    if platform:
++        normalized_platform = platform.strip().lower()
++        contracts = [item for item in contracts if item["platform"] == normalized_platform]
+     total = len(contracts)
+     offset = (page - 1) * limit
+     return contracts[offset : offset + limit], total
+diff --git a/frontend/src/pages/RecordsPage.tsx b/frontend/src/pages/RecordsPage.tsx
+index 1870d22..75e9dad 100644
+--- a/frontend/src/pages/RecordsPage.tsx
++++ b/frontend/src/pages/RecordsPage.tsx
+@@ -1,4 +1,4 @@
+-import { useState, useEffect } from 'react'
++import { Fragment, useState, useEffect } from 'react'
+ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+ import { useTranslation } from 'react-i18next'
+ import { toast } from 'sonner'
+@@ -215,7 +215,7 @@ export default function RecordsPage() {
+                 </td>
+               </tr>
+             ) : records.map((r) => (
+-              <>
++              <Fragment key={r.id}>
+                 <tr
+                   key={r.id}
+                   onClick={() => toggleExpand(r.id)}
+@@ -289,7 +289,7 @@ export default function RecordsPage() {
+                     </td>
+                   </tr>
+                 )}
+-              </>
++              </Fragment>
+             ))}
+           </tbody>
+         </table>
+diff --git a/frontend/vite.config.ts b/frontend/vite.config.ts
+index e14379a..bd18b84 100644
+--- a/frontend/vite.config.ts
++++ b/frontend/vite.config.ts
+@@ -10,7 +10,9 @@ export default defineConfig({
+     },
+   },
+   server: {
+-    port: 8030,
++    // Keep the documented default while allowing local runs to choose a port
++    // (for example FRONTEND_PORT=5174) without relying on CLI-only overrides.
++    port: Number(process.env.FRONTEND_PORT ?? 8030),
+     // Allow requests from Docker containers (host.docker.internal) and any LAN IP
+     // Dev-only: production uses nginx which doesn't have this restriction
+     allowedHosts: true,
+diff --git a/tests/integration/test_sunbird_api.py b/tests/integration/test_sunbird_api.py
+index 27d2c18..7cb5a6b 100644
+--- a/tests/integration/test_sunbird_api.py
++++ b/tests/integration/test_sunbird_api.py
+@@ -35,3 +35,20 @@ async def test_sunbird_works_endpoint_starts_empty(client):
+     response = await client.get("/api/v1/integrations/sunbird/works")
+     assert response.status_code == 200
+     assert response.json()["data"] == []
++
++
++@pytest.mark.asyncio
++async def test_account_display_name_can_be_customized(client):
++    created = await client.post(
++        "/api/v1/integrations/sunbird/accounts",
++        json={"platform": "douyin", "external_account_id": "sec-custom-name"},
++    )
++    account_id = created.json()["data"]["account"]["id"]
++
++    updated = await client.patch(
++        f"/api/v1/integrations/sunbird/accounts/{account_id}",
++        json={"display_name": "我的自定义昵称"},
++    )
++
++    assert updated.status_code == 200
++    assert updated.json()["data"]["display_name"] == "我的自定义昵称"
+diff --git a/tests/unit/pipeline/test_ai_processor.py b/tests/unit/pipeline/test_ai_processor.py
+index f95d39b..17e4845 100644
+--- a/tests/unit/pipeline/test_ai_processor.py
++++ b/tests/unit/pipeline/test_ai_processor.py
+@@ -45,3 +45,25 @@ async def test_process_with_ai_enriches_records():
+     assert records[0].ai_enrichment == {"summary": "Summary 1"}
+     assert records[1].ai_enrichment == {"summary": "Summary 2"}
+     assert records[0].status == "ai_processed"
++
++
++@pytest.mark.asyncio
++async def test_process_with_ai_does_not_mark_error_payload_as_processed():
++    records = [MagicMock()]
++    records[0].ai_enrichment = None
++    records[0].status = "normalized"
++    mock_processor = AsyncMock()
++    mock_processor.process = AsyncMock(
++        return_value=ProcessingResult(
++            success=False,
++            enrichments=[{"error": "provider unavailable"}],
++            error="1/1 requests failed",
++        )
++    )
++
++    with patch("backend.pipeline.ai_processor.get_processor", return_value=mock_processor):
++        result = await process_with_ai(records, {"processor_type": "openai"})
++
++    assert result.success is False
++    assert records[0].ai_enrichment is None
++    assert records[0].status == "normalized"
+diff --git a/tests/unit/test_content_detection.py b/tests/unit/test_content_detection.py
+index 6686ebd..bd42aed 100644
+--- a/tests/unit/test_content_detection.py
++++ b/tests/unit/test_content_detection.py
+@@ -67,8 +67,8 @@ async def test_early_snapshot_enters_queue_after_twenty_prior_works(db_session):
+         work_id=current_work.id,
+         task_id=task.id,
+         collected_at=datetime(2026, 8, 20, 1, tzinfo=timezone.utc),
+-        like_count=250,
+-        metrics={"like_count": 250},
++        like_count=300,
++        metrics={"like_count": 300},
+         raw_data={},
+     )
+     db_session.add(snapshot)
+diff --git a/tests/unit/test_detector.py b/tests/unit/test_detector.py
+index 2921e76..ec774ac 100644
+--- a/tests/unit/test_detector.py
++++ b/tests/unit/test_detector.py
+@@ -68,7 +68,7 @@ def test_missing_metric_in_latest_twenty_is_not_replaced_by_older_work():
+     assert decision.status == "insufficient_data"
+ 
+ 
+-def test_fewer_than_twenty_valid_works_is_insufficient():
++def test_partial_target_sample_is_still_evaluated_after_five_works():
+     decision = evaluate_public_metric(
+         metric_name="like_count",
+         current_value=10_000,
+@@ -76,9 +76,22 @@ def test_fewer_than_twenty_valid_works_is_insufficient():
+         finalized=True,
+     )
+ 
+-    assert decision.status == "insufficient_data"
++    assert decision.status == "very_hot"
+     assert decision.baseline_size == 19
+     assert decision.baseline_missing_count == 0
++    assert decision.enters_analysis is True
++
++
++def test_fewer_than_five_works_is_insufficient():
++    decision = evaluate_public_metric(
++        metric_name="like_count",
++        current_value=10_000,
++        baseline_values=[1_000] * 4,
++        finalized=True,
++    )
++
++    assert decision.status == "insufficient_data"
++    assert decision.baseline_size == 4
+     assert decision.enters_analysis is False
+ 
+ 
+@@ -122,7 +135,7 @@ def test_composite_detector_uses_available_public_metrics_without_complete_rows(
+     ] * 7
+     decision = evaluate_public_metrics(
+         metric_names=["like_count", "favorite_count", "share_count"],
+-        current_values={"like_count": 2_000, "favorite_count": None, "share_count": 10},
++        current_values={"like_count": 3_000, "favorite_count": None, "share_count": 10},
+         baseline_values=baseline[:20],
+         finalized=True,
+     )
+diff --git a/tests/unit/test_sunbird_integration_service.py b/tests/unit/test_sunbird_integration_service.py
+index bef6d8e..63ddfe3 100644
+--- a/tests/unit/test_sunbird_integration_service.py
++++ b/tests/unit/test_sunbird_integration_service.py
+@@ -80,7 +80,7 @@ async def test_unconfigured_account_cannot_start_check(db_session):
+ 
+ 
+ @pytest.mark.asyncio
+-async def test_list_bound_accounts_hides_unconfigured_accounts(db_session):
++async def test_list_bound_accounts_includes_unconfigured_accounts(db_session):
+     bound, _, _ = await service.bind_account(
+         db_session,
+         SunbirdAccountBindRequest(
+@@ -101,8 +101,9 @@ async def test_list_bound_accounts_hides_unconfigured_accounts(db_session):
+ 
+     accounts, total = await service.list_bound_accounts(db_session)
+ 
+-    assert total == 1
+-    assert [account.id for account in accounts] == [bound.id]
++    assert total == 2
++    assert bound.id in {account.id for account in accounts}
++    assert "sec-unconfigured" in {account.external_account_id for account in accounts}
+ 
+ 
+ @pytest.mark.asyncio
+@@ -124,6 +125,97 @@ async def test_idempotent_rebind_preserves_successful_collection_status(db_sessi
+     assert rebound.last_success_at is not None
+ 
+ 
++@pytest.mark.asyncio
++async def test_bind_account_uses_resolved_profile_name(db_session, monkeypatch):
++    async def fake_resolver(platform, profile_url):
++        assert platform == "douyin"
++        assert profile_url.endswith("sec-named")
++        return "真实昵称"
++
++    monkeypatch.setattr(service, "resolve_profile_display_name", fake_resolver)
++    account, _, _ = await service.bind_account(
++        db_session,
++        SunbirdAccountBindRequest(
++            platform="douyin",
++            external_account_id="sec-named",
++            profile_url="https://www.douyin.com/user/sec-named",
++        ),
++    )
++
++    assert account.display_name == "真实昵称"
++
++
++@pytest.mark.asyncio
++async def test_rebind_preserves_custom_display_name(db_session, monkeypatch):
++    account, _, _ = await service.bind_account(
++        db_session,
++        SunbirdAccountBindRequest(
++            platform="douyin",
++            external_account_id="sec-custom",
++            display_name="我的备注",
++        ),
++    )
++    account.raw_profile = {"display_name_custom": True}
++    await db_session.flush()
++
++    async def unexpected_resolver(*_args):
++        raise AssertionError("custom names must not trigger automatic replacement")
++
++    monkeypatch.setattr(service, "resolve_profile_display_name", unexpected_resolver)
++    rebound, _, _ = await service.bind_account(
++        db_session,
++        SunbirdAccountBindRequest(
++            platform="douyin",
++            external_account_id="sec-custom",
++            profile_url="https://www.douyin.com/user/sec-custom",
++        ),
++    )
++
++    assert rebound.display_name == "我的备注"
++
++
++@pytest.mark.asyncio
++async def test_purge_account_removes_account_schedule_and_history(db_session):
++    account, schedule, _ = await service.bind_account(
++        db_session,
++        SunbirdAccountBindRequest(
++            platform="douyin", external_account_id="sec-purge", display_name="creator"
++        ),
++    )
++    work = ContentWork(
++        account_id=account.id,
++        external_work_id="work-purged",
++        first_seen_at=datetime.now(UTC),
++        last_seen_at=datetime.now(UTC),
++        raw_identity={},
++    )
++    db_session.add(work)
++    await db_session.flush()
++    snapshot = EngagementSnapshot(work_id=work.id, metrics={"like_count": 10}, raw_data={})
++    db_session.add(snapshot)
++    await db_session.flush()
++    detection = DetectionResult(
++        work_id=work.id,
++        snapshot_id=snapshot.id,
++        detector_version="purge-test",
++        metric_name="like_count",
++        baseline_size=20,
++        baseline_missing_count=0,
++        status="observing",
++        evidence={},
++    )
++    db_session.add(detection)
++    await db_session.flush()
++    account_id, schedule_id, work_id = account.id, schedule.id, work.id
++
++    result = await service.remove_account(db_session, account)
++
++    assert result["purged"] is True
++    assert await db_session.get(ContentAccount, account_id) is None
++    assert await db_session.get(CronSchedule, schedule_id) is None
++    assert await db_session.get(ContentWork, work_id) is None
++
++
+ @pytest.mark.asyncio
+ async def test_work_contract_exposes_public_evidence_for_sunbird(db_session):
+     account = ContentAccount(platform="douyin", external_account_id="sec-3", raw_profile={})
