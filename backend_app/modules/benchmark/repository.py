@@ -55,11 +55,18 @@ def ensure_tables(db_path):
             comment_count TEXT,
             share_count TEXT,
             collect_count TEXT,
+            source_type TEXT NOT NULL DEFAULT 'benchmark',
+            notes TEXT,
             raw_data TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(account_id, video_url)
         )
         ''')
+        video_columns = {row[1] for row in cursor.execute("PRAGMA table_info(douyin_benchmark_videos)").fetchall()}
+        if "source_type" not in video_columns:
+            cursor.execute("ALTER TABLE douyin_benchmark_videos ADD COLUMN source_type TEXT NOT NULL DEFAULT 'benchmark'")
+        if "notes" not in video_columns:
+            cursor.execute("ALTER TABLE douyin_benchmark_videos ADD COLUMN notes TEXT")
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS douyin_benchmark_video_analysis (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -474,7 +481,9 @@ def list_idea_radar_videos(db_path, parse_metric_number, limit=80, entry_multipl
                 or item.get("published_at")
             )
             # 开启时效筛选时，缺少可解析发布时间的旧数据不应混入结果。
-            if published_at is None or published_at < cutoff:
+            if published_at is None and str(item.get("source_type") or "benchmark") != "manual":
+                continue
+            if published_at is not None and published_at < cutoff:
                 continue
         relative_multiple = monitor_work.get("relative_multiple") or raw_data.get("relative_multiple")
         try:
@@ -483,9 +492,11 @@ def list_idea_radar_videos(db_path, parse_metric_number, limit=80, entry_multipl
             relative_multiple = None
         # 统一使用当前单一入选门槛重新判定，避免历史的“火/特别火”
         # 状态继续污染列表。
-        if relative_multiple is None or relative_multiple < float(entry_multiple):
+        is_manual = str(item.get("source_type") or "benchmark") == "manual"
+        if not is_manual and (relative_multiple is None or relative_multiple < float(entry_multiple)):
             continue
-        item["hot_status"] = "selected"
+        item["hot_status"] = "manual" if is_manual else "selected"
+        item["source_type"] = "manual" if is_manual else "benchmark"
         item["relative_multiple"] = relative_multiple
         item["monitor_metrics"] = monitor_work.get("latest_public_metrics") or raw_data.get("metrics") or {}
         item["like_score"] = parse_metric_number(item.get("like_count"))
@@ -496,6 +507,56 @@ def list_idea_radar_videos(db_path, parse_metric_number, limit=80, entry_multipl
         item.get("id") or 0,
     ), reverse=True)
     return videos[:limit]
+
+
+def add_manual_video(db_path, video_url, normalize_url):
+    """Create or update a user-curated work that bypasses benchmark thresholds."""
+    video_url = normalize_url(video_url)
+    if not video_url:
+        raise ValueError("无效的作品链接")
+    ensure_tables(db_path)
+    with sqlite3.connect(Path(db_path)) as conn:
+        row = conn.execute("SELECT id FROM douyin_benchmark_accounts WHERE homepage_url = ?", ("local://manual",)).fetchone()
+        if row:
+            account_id = row[0]
+        else:
+            cur = conn.execute("INSERT INTO douyin_benchmark_accounts (homepage_url, nickname, status) VALUES (?, ?, 'success')", ("local://manual", "手动添加"))
+            account_id = cur.lastrowid
+        conn.execute("INSERT INTO douyin_benchmark_videos (account_id, video_url, title, source_type, raw_data) VALUES (?, ?, ?, 'manual', ?) ON CONFLICT(account_id, video_url) DO UPDATE SET source_type='manual', raw_data=excluded.raw_data", (account_id, video_url, "待抓取作品", json.dumps({"manual": True}, ensure_ascii=False)))
+        row = conn.execute("SELECT id FROM douyin_benchmark_videos WHERE account_id = ? AND video_url = ?", (account_id, video_url)).fetchone()
+        conn.commit()
+    return int(row[0])
+
+
+def update_manual_video_metadata(db_path, video_id, metadata):
+    """Persist best-effort public metadata returned by video-jiexi."""
+    ensure_tables(db_path)
+    metadata = metadata if isinstance(metadata, dict) else {}
+    title = str(metadata.get("title") or metadata.get("description") or "").strip()
+    cover = str(metadata.get("thumbnail") or metadata.get("cover_url") or "").strip()
+    uploader = str(metadata.get("uploader") or metadata.get("author") or "").strip()
+    with sqlite3.connect(Path(db_path)) as conn:
+        row = conn.execute("SELECT account_id FROM douyin_benchmark_videos WHERE id = ? AND source_type = 'manual'", (video_id,)).fetchone()
+        if not row:
+            return False
+        if uploader:
+            conn.execute("UPDATE douyin_benchmark_accounts SET nickname = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (uploader, row[0]))
+        conn.execute("UPDATE douyin_benchmark_videos SET title = COALESCE(NULLIF(?, ''), title), cover_url = COALESCE(NULLIF(?, ''), cover_url), raw_data = ? WHERE id = ?", (title, cover, json.dumps({"manual": True, "inspection": metadata}, ensure_ascii=False), video_id))
+        conn.commit()
+    return True
+
+
+def update_manual_video_details(db_path, video_id, title=None, uploader=None, notes=None):
+    ensure_tables(db_path)
+    with sqlite3.connect(Path(db_path)) as conn:
+        row = conn.execute("SELECT account_id FROM douyin_benchmark_videos WHERE id = ? AND source_type = 'manual'", (video_id,)).fetchone()
+        if not row:
+            return False
+        if uploader is not None and str(uploader).strip():
+            conn.execute("UPDATE douyin_benchmark_accounts SET nickname = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (str(uploader).strip(), row[0]))
+        conn.execute("UPDATE douyin_benchmark_videos SET title = COALESCE(NULLIF(?, ''), title), notes = ? WHERE id = ?", (str(title or '').strip(), None if notes is None else str(notes).strip(), video_id))
+        conn.commit()
+    return True
 
 
 def upsert_monitor_queue_video(db_path, work):

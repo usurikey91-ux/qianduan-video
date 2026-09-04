@@ -74,6 +74,8 @@ export const benchmarkApi = {
   getIdeaRadarVideos: (limit = 80, days = 0) => {
     return http.get('/idea-radar/douyin/videos', { limit, days })
   },
+  addManualIdeaRadarVideo: (videoUrl) => http.post('/idea-radar/douyin/videos/manual', { videoUrl }),
+  updateManualIdeaRadarVideo: (videoId, payload) => http.patch(`/idea-radar/douyin/videos/${videoId}/manual-details`, payload),
 
   analyzeIdeaRadarVideo: (videoId, options = {}) => {
     return http.post(`/idea-radar/douyin/videos/${videoId}/analyze`, {

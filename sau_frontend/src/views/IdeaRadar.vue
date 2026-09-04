@@ -3,12 +3,13 @@
     <div class="page-header">
       <div>
         <h1>入选作品列表</h1>
-        <p>只展示达到入选门槛的对标作品公开指标、来源链接和原始转写，不进行 AI 分析或文案改写。</p>
+        <p>统一管理对标入选与手动添加作品；公开指标、原视频和本地转写分开呈现。</p>
       </div>
       <div class="header-actions">
         <el-button type="primary" :loading="loadingVideos" @click="fetchVideos">
           刷新作品
         </el-button>
+        <el-button @click="manualDialog = true">手动添加</el-button>
       </div>
     </div>
 
@@ -20,6 +21,7 @@
         </div>
         <div class="filter-row">
           <el-input v-model="keyword" placeholder="搜索标题 / 账号" clearable />
+          <el-segmented v-model="sourceFilter" :options="sourceFilterOptions" />
         </div>
         <div class="time-filter">
           <div class="time-filter-label">
@@ -47,17 +49,48 @@
             <div class="video-meta">
               <span class="account">{{ video.account_name || '对标账号' }}</span>
               <span class="likes">
-                <el-tag size="small" type="danger" effect="plain">已入选</el-tag>
-                <span>{{ video.relative_multiple ? `${Number(video.relative_multiple).toFixed(1)}x` : '—' }}</span>
+                <el-tag size="small" :type="video.source_type === 'manual' ? 'info' : 'danger'" effect="plain">{{ video.source_type === 'manual' ? '手动添加' : '对标入选' }}</el-tag>
+                <span v-if="video.source_type !== 'manual'">{{ video.relative_multiple ? `${Number(video.relative_multiple).toFixed(1)}x` : '—' }}</span>
               </span>
             </div>
             <div class="video-title">{{ video.title }}</div>
           </button>
-          <el-empty v-if="!loadingVideos && filteredVideos.length === 0" description="暂无对标作品" />
+          <el-empty v-if="!loadingVideos && filteredVideos.length === 0" description="暂无入选作品" />
         </el-scrollbar>
       </section>
 
       <section class="result-panel" v-loading="analyzing">
+        <div v-if="selectedVideo" class="manual-facts">
+          <div class="source-bar">
+            <div>
+              <span class="source-account">{{ selectedVideo.account_name || (selectedVideo.source_type === 'manual' ? '手动添加' : '对标账号') }}</span>
+              <h2>{{ selectedVideo.title || '待抓取作品' }}</h2>
+            </div>
+            <div class="source-actions">
+              <el-tag :type="selectedVideo.source_type === 'manual' ? 'info' : 'danger'" effect="plain">{{ selectedVideo.source_type === 'manual' ? '手动添加' : '对标入选' }}</el-tag>
+              <el-link :href="selectedVideo.video_url" target="_blank" type="primary">打开原作品</el-link>
+              <el-button size="small" type="success" @click="openVideoInspector">解析视频</el-button>
+            </div>
+          </div>
+          <div class="metric-strip">
+            <div><span>点赞</span><strong>{{ formatNumber(selectedVideo.like_count) }}</strong></div>
+            <div><span>评论</span><strong>{{ formatNumber(selectedVideo.comment_count) }}</strong></div>
+            <div><span>收藏</span><strong>{{ formatNumber(selectedVideo.collect_count) }}</strong></div>
+            <div><span>分享</span><strong>{{ formatNumber(selectedVideo.share_count) }}</strong></div>
+            <div v-if="selectedVideo.source_type !== 'manual'"><span>相对倍数</span><strong>{{ selectedVideo.relative_multiple ? `${Number(selectedVideo.relative_multiple).toFixed(1)}x` : '未提供' }}</strong></div>
+          </div>
+          <div v-if="taskState?.cleaned_transcript" class="section-block">
+            <div class="section-label">原视频本地转写</div>
+            <div class="transcript-box">{{ taskState.cleaned_transcript }}</div>
+          </div>
+          <div v-if="selectedVideo.source_type === 'manual'" class="section-block supplement-block">
+            <div class="section-label">补充信息</div>
+            <el-input v-model="manualDetails.title" class="supplement-input" placeholder="标题（可选）" />
+            <el-input v-model="manualDetails.uploader" class="supplement-input" placeholder="作者（可选）" />
+            <el-input v-model="manualDetails.notes" type="textarea" :rows="3" placeholder="备注、观察重点或补充上下文（可选）" />
+            <el-button size="small" type="primary" :loading="savingManualDetails" @click="saveManualDetails">保存补充信息</el-button>
+          </div>
+        </div>
         <template v-if="radar && !FACTS_ONLY_MODE">
           <div class="source-bar">
             <div>
@@ -205,29 +238,6 @@
           </div>
         </template>
 
-        <div v-else-if="FACTS_ONLY_MODE && selectedVideo" class="facts-only-card">
-          <div class="source-bar">
-            <div>
-              <span class="source-account">{{ selectedVideo.account_name || '对标账号' }}</span>
-              <h2>{{ selectedVideo.title }}</h2>
-            </div>
-            <div class="source-actions">
-              <el-link :href="selectedVideo.video_url" target="_blank" type="primary">打开原作品</el-link>
-            </div>
-          </div>
-          <div class="metric-strip">
-            <div><span>点赞</span><strong>{{ formatNumber(selectedVideo.like_count) }}</strong></div>
-            <div><span>评论</span><strong>{{ formatNumber(selectedVideo.comment_count) }}</strong></div>
-            <div><span>收藏</span><strong>{{ formatNumber(selectedVideo.collect_count) }}</strong></div>
-            <div><span>分享</span><strong>{{ formatNumber(selectedVideo.share_count) }}</strong></div>
-            <div><span>相对倍数</span><strong>{{ selectedVideo.relative_multiple ? `${Number(selectedVideo.relative_multiple).toFixed(1)}x` : '未提供' }}</strong></div>
-          </div>
-          <div v-if="taskState?.cleaned_transcript" class="section-block">
-            <div class="section-label">视频转写文案（事实记录）</div>
-            <div class="transcript-box">{{ taskState.cleaned_transcript }}</div>
-          </div>
-          <el-empty v-else description="暂未采集到转写文案，只展示公开指标" :image-size="90" />
-        </div>
         <div v-else-if="taskState && taskState.status !== 'idle'" class="task-state-card">
           <template v-if="taskState.status === 'failed'">
             <el-result icon="error" title="视频解析失败" :sub-title="taskState.error_message || '请重新解析'">
@@ -289,6 +299,13 @@
       </section>
     </div>
   </div>
+  <el-dialog v-model="manualDialog" title="手动添加作品" width="520px">
+    <el-form @submit.prevent="addManualVideo">
+      <el-form-item label="作品链接"><el-input v-model="manualUrl" placeholder="粘贴抖音或其他支持平台的作品链接" /></el-form-item>
+      <p class="dialog-note">添加后会进入“手动添加”，不参与中位数和入选倍数判断；选择作品后可下载原视频并用本地 Whisper 转写。</p>
+    </el-form>
+    <template #footer><el-button @click="manualDialog=false">取消</el-button><el-button type="primary" :loading="addingManual" @click="addManualVideo">添加作品</el-button></template>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -302,6 +319,17 @@ const selectedVideo = ref(null)
 const radar = ref(null)
 const taskState = ref(null)
 const keyword = ref('')
+const sourceFilter = ref(localStorage.getItem('ideaRadarSourceFilter') || 'all')
+const sourceFilterOptions = [
+  { label: '全部', value: 'all' },
+  { label: '对标入选', value: 'benchmark' },
+  { label: '手动添加', value: 'manual' },
+]
+const manualDialog = ref(false)
+const manualUrl = ref('')
+const addingManual = ref(false)
+const savingManualDetails = ref(false)
+const manualDetails = ref({ title: '', uploader: '', notes: '' })
 const savedDays = Number(localStorage.getItem('ideaRadarDays') || 0)
 const selectedDays = ref(Number.isFinite(savedDays) ? Math.min(90, Math.max(0, savedDays)) : 0)
 const loadingVideos = ref(false)
@@ -324,8 +352,9 @@ const taskProgress = computed(() => Math.max(0, Math.min(Number(taskState.value?
 
 const filteredVideos = computed(() => {
   const q = keyword.value.trim().toLowerCase()
-  if (!q) return videos.value
   return videos.value.filter((video) => {
+    if (sourceFilter.value !== 'all' && (video.source_type || 'benchmark') !== sourceFilter.value) return false
+    if (!q) return true
     return `${video.title || ''} ${video.account_name || ''}`.toLowerCase().includes(q)
   })
 })
@@ -333,6 +362,7 @@ const filteredVideos = computed(() => {
 watch(selectedDays, (value) => {
   localStorage.setItem('ideaRadarDays', String(value))
 })
+watch(sourceFilter, (value) => localStorage.setItem('ideaRadarSourceFilter', value))
 
 const formatNumber = (value) => {
   const n = Number(value || 0)
@@ -372,11 +402,25 @@ const fetchVideos = async () => {
   }
 }
 
+const addManualVideo = async () => {
+  if (!manualUrl.value.trim()) return ElMessage.warning('请先粘贴作品链接')
+  addingManual.value = true
+  try {
+    await benchmarkApi.addManualIdeaRadarVideo(manualUrl.value.trim())
+    manualDialog.value = false
+    manualUrl.value = ''
+    await fetchVideos()
+    ElMessage.success('已添加到手动添加')
+  } catch (error) { ElMessage.error(error?.message || '添加作品失败') }
+  finally { addingManual.value = false }
+}
+
 const selectVideo = async (video) => {
   selectionToken += 1
   const token = selectionToken
   stopPolling()
   selectedVideo.value = video
+  manualDetails.value = { title: video.title || '', uploader: video.account_name || '', notes: video.notes || '' }
   radar.value = null
   taskState.value = null
   analyzing.value = true
@@ -388,9 +432,9 @@ const selectVideo = async (video) => {
       const task = await benchmarkApi.analyzeIdeaRadarVideo(video.id, { forceTranscription: true })
       if (token !== selectionToken) return
       applyTaskState(task.data)
-      if (task.data?.status === 'processing') startPolling(video.id)
+      if (task.data?.status === 'processing') startPolling(video.id, token)
     } else if (res.data?.status === 'processing') {
-      startPolling(video.id)
+      startPolling(video.id, token)
     }
   } catch (error) {
     console.error('获取作品事实数据失败:', error)
@@ -398,6 +442,18 @@ const selectVideo = async (video) => {
   } finally {
     analyzing.value = false
   }
+}
+
+const saveManualDetails = async () => {
+  if (!selectedVideo.value || selectedVideo.value.source_type !== 'manual') return
+  savingManualDetails.value = true
+  try {
+    const res = await benchmarkApi.updateManualIdeaRadarVideo(selectedVideo.value.id, manualDetails.value)
+    selectedVideo.value = { ...selectedVideo.value, ...(res.data || {}) }
+    videos.value = videos.value.map((item) => item.id === selectedVideo.value.id ? selectedVideo.value : item)
+    ElMessage.success('补充信息已保存')
+  } catch (error) { ElMessage.error(error?.message || '保存补充信息失败') }
+  finally { savingManualDetails.value = false }
 }
 
 const applyTaskState = (state) => {

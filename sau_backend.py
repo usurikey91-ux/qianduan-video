@@ -2717,6 +2717,47 @@ def get_idea_radar_videos():
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
 
 
+@app.route('/idea-radar/douyin/videos/manual', methods=['POST'])
+def add_manual_idea_radar_video():
+    try:
+        payload = request.get_json(silent=True) or {}
+        def normalize_manual_url(value):
+            value = str(value or '').strip()
+            if not value:
+                return ''
+            if not value.startswith(('http://', 'https://')):
+                value = f'https://{value}'
+            return value.split('?')[0].split('#')[0]
+        video_url = str(payload.get('videoUrl') or payload.get('video_url') or '').strip()
+        video_id = benchmark_repository.add_manual_video(get_db_path(), video_url, normalize_manual_url)
+        inspect_error = None
+        try:
+            inspection = video_jiexi_client.inspect(normalize_manual_url(video_url), settings=load_runtime_settings())
+            benchmark_repository.update_manual_video_metadata(get_db_path(), video_id, inspection)
+        except Exception as exc:
+            inspect_error = str(exc)[:300]
+        return jsonify({"code": 200, "msg": "success", "data": load_idea_radar_video(video_id), "meta_error": inspect_error}), 200
+    except ValueError as exc:
+        return jsonify({"code": 400, "msg": str(exc), "data": None}), 400
+    except Exception as exc:
+        return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
+
+
+@app.route('/idea-radar/douyin/videos/<int:video_id>/manual-details', methods=['PATCH'])
+def update_manual_idea_radar_video_details(video_id):
+    try:
+        payload = request.get_json(silent=True) or {}
+        ok = benchmark_repository.update_manual_video_details(
+            get_db_path(), video_id,
+            title=payload.get('title'), uploader=payload.get('uploader'), notes=payload.get('notes'),
+        )
+        if not ok:
+            return jsonify({"code": 404, "msg": "手动作品不存在", "data": None}), 404
+        return jsonify({"code": 200, "msg": "success", "data": load_idea_radar_video(video_id)}), 200
+    except Exception as exc:
+        return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
+
+
 @app.route('/idea-radar/douyin/videos/<int:video_id>/analyze', methods=['POST'])
 def analyze_idea_radar_video(video_id):
     try:
