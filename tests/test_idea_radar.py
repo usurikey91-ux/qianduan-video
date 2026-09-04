@@ -1,11 +1,44 @@
 import unittest
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 import sau_backend
+from backend_app.modules.benchmark import repository as benchmark_repository
 
 
 class IdeaRadarPipelineTests(unittest.TestCase):
+    def test_radar_hides_stale_monitor_mirrors(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            db_path = Path(directory) / "radar.db"
+            base = {
+                "account": {
+                    "external_account_id": "account-1",
+                    "platform": "douyin",
+                    "display_name": "账号",
+                },
+                "title": "入选作品",
+                "relative_multiple": 6,
+                "status": "selected",
+            }
+            benchmark_repository.upsert_monitor_queue_video(
+                db_path, {**base, "url": "https://example.com/active"}
+            )
+            benchmark_repository.upsert_monitor_queue_video(
+                db_path, {**base, "url": "https://example.com/stale"}
+            )
+
+            videos = benchmark_repository.list_idea_radar_videos(
+                db_path,
+                sau_backend.parse_metric_number,
+                active_monitor_urls={"https://example.com/active"},
+            )
+
+            self.assertEqual(
+                ["https://example.com/active"],
+                [video["video_url"] for video in videos],
+            )
+
     def test_legacy_three_and_five_thresholds_migrate_to_single_five_x_gate(self):
         rules = sau_backend.normalize_benchmark_monitoring_rules({
             "reference_work_count": 20,

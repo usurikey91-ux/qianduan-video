@@ -440,7 +440,14 @@ def _parse_published_at(value):
     return parsed.astimezone(timezone.utc)
 
 
-def list_idea_radar_videos(db_path, parse_metric_number, limit=80, entry_multiple=5.0, days=0):
+def list_idea_radar_videos(
+    db_path,
+    parse_metric_number,
+    limit=80,
+    entry_multiple=5.0,
+    days=0,
+    active_monitor_urls=None,
+):
     ensure_tables(db_path)
     try:
         limit = max(1, min(int(limit), 200))
@@ -474,6 +481,10 @@ def list_idea_radar_videos(db_path, parse_metric_number, limit=80, entry_multipl
             raw_data = {}
         monitor_work = raw_data.get("monitor_work") if isinstance(raw_data, dict) else {}
         monitor_work = monitor_work if isinstance(monitor_work, dict) else {}
+        if monitor_work and active_monitor_urls is not None:
+            video_url = str(item.get("video_url") or "").strip()
+            if video_url not in active_monitor_urls:
+                continue
         if cutoff is not None:
             published_at = _parse_published_at(
                 monitor_work.get("published_at")

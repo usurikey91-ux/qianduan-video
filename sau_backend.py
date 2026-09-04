@@ -1585,10 +1585,12 @@ def parse_metric_number(value):
 
 
 def list_idea_radar_videos(limit=80, days=0):
-    sync_hot_monitor_works()
+    sync_result = sync_hot_monitor_works()
+    active_monitor_urls = None if sync_result.get("error") else set(sync_result["active_urls"])
     rules = get_benchmark_monitoring_defaults()
     return benchmark_repository.list_idea_radar_videos(
-        get_db_path(), parse_metric_number, limit, rules["hot_multiple"], days
+        get_db_path(), parse_metric_number, limit, rules["hot_multiple"], days,
+        active_monitor_urls,
     )
 
 
@@ -1601,12 +1603,16 @@ def sync_hot_monitor_works():
         return {"synced": 0, "skipped": 0, "error": str(exc)}
     synced = 0
     skipped = 0
+    active_urls = []
     for work in works:
+        video_url = str(work.get("url") or work.get("video_url") or "").strip()
+        if video_url:
+            active_urls.append(video_url)
         if benchmark_repository.upsert_monitor_queue_video(get_db_path(), work):
             synced += 1
         else:
             skipped += 1
-    return {"synced": synced, "skipped": skipped}
+    return {"synced": synced, "skipped": skipped, "active_urls": active_urls}
 
 
 def classify_idea_theme(text):
