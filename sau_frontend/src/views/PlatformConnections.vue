@@ -247,11 +247,11 @@ onBeforeUnmount(() => {
 .page-heading h1 { margin: 6px 0 8px; color: var(--sau-ink); font-family: var(--sau-display-font); font-size: 34px; }
 .page-heading p { max-width: 760px; margin: 0; color: var(--sau-muted); line-height: 1.7; }
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.steps div { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--sau-line); border-radius: 12px; background: rgba(255, 253, 249, .74); }
+.steps div { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--sau-line); border-radius: 8px; background: var(--sau-paper); }
 .steps strong { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--sau-ink); color: #fff; }
 .steps span { color: var(--sau-ink); font-weight: 600; }
 .platform-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.platform-card { padding: 22px; border: 1px solid var(--sau-line); border-radius: 16px; background: var(--sau-paper); box-shadow: 0 12px 30px rgba(29, 43, 58, .06); }
+.platform-card { padding: 22px; border: 1px solid var(--sau-line); border-radius: 8px; background: var(--sau-paper); box-shadow: 0 8px 24px rgba(29, 43, 58, .06); }
 .platform-card__top { display: flex; align-items: flex-start; gap: 14px; }
 .platform-mark { width: 48px; height: 48px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 14px; color: #fff; font-size: 20px; font-weight: 800; }
 .platform-mark--douyin { background: #1d2b3a; }
@@ -260,22 +260,22 @@ onBeforeUnmount(() => {
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .title-row h2 { margin: 0; color: var(--sau-ink); font-size: 19px; }
 .platform-title p { margin: 7px 0 0; color: var(--sau-muted); font-size: 13px; line-height: 1.65; }
-.account-panel { display: flex; align-items: center; gap: 12px; min-height: 72px; margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: var(--sau-soft); }
+.account-panel { display: flex; align-items: center; gap: 12px; min-height: 72px; margin-top: 18px; padding: 12px 14px; border-radius: 8px; background: var(--sau-soft); }
 .account-panel div { display: grid; gap: 2px; }
 .account-panel span, .account-panel small { color: var(--sau-muted); font-size: 12px; }
 .account-panel strong { color: var(--sau-ink); }
-.account-panel--empty > .el-icon { width: 44px; height: 44px; border-radius: 50%; background: #fff; color: var(--sau-muted); font-size: 20px; }
-.status-panel { display: flex; gap: 10px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--sau-line); border-radius: 12px; }
+.account-panel--empty > .el-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--sau-paper); color: var(--sau-muted); font-size: 20px; }
+.status-panel { display: flex; gap: 10px; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--sau-line); border-radius: 8px; }
 .status-panel > .el-icon { margin-top: 2px; color: var(--sau-cinnabar); font-size: 19px; }
 .status-panel div { display: grid; gap: 3px; }
 .status-panel strong { color: var(--sau-ink); font-size: 13px; }
 .status-panel span { color: var(--sau-muted); font-size: 12px; line-height: 1.5; }
-.risk-box { display: grid; gap: 6px; margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: #fff7e8; }
+.risk-box { display: grid; gap: 6px; margin-top: 14px; padding: 12px 14px; border-radius: 8px; background: var(--sau-warm-soft); }
 .risk-box :deep(.el-checkbox) { height: auto; align-items: flex-start; white-space: normal; }
-.risk-box :deep(.el-checkbox__label) { color: #6f531e; line-height: 1.5; white-space: normal; }
+.risk-box :deep(.el-checkbox__label) { color: var(--sau-ink-soft); line-height: 1.5; white-space: normal; }
 .risk-box a { width: fit-content; color: var(--sau-cinnabar); font-size: 12px; }
 .card-actions { display: flex; gap: 10px; margin-top: 18px; }
-.safety-card { border-radius: 14px; }
+.safety-card { border-radius: 8px; }
 .safety-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .safety-grid div { display: flex; align-items: center; gap: 8px; color: var(--sau-ink); font-size: 13px; }
 .safety-grid .el-icon { color: var(--sau-cinnabar); font-size: 18px; }

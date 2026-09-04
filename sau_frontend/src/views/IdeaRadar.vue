@@ -537,9 +537,9 @@ onBeforeUnmount(stopPolling)
 
 .video-panel,
 .result-panel {
-  background: rgba(255, 253, 249, 0.94);
+  background: var(--sau-paper);
   border: 1px solid var(--sau-line);
-  border-radius: 14px;
+  border-radius: 8px;
   box-shadow: 0 8px 24px rgba(29, 43, 58, 0.055);
 }
 
@@ -557,7 +557,7 @@ onBeforeUnmount(stopPolling)
 
   small {
     font-weight: 400;
-    color: #8a94a6;
+    color: var(--sau-muted);
   }
 }
 
@@ -593,8 +593,8 @@ onBeforeUnmount(stopPolling)
   width: 100%;
   text-align: left;
   border: 1px solid var(--sau-line);
-  background: #fffefa;
-  border-radius: 10px;
+  background: var(--sau-paper);
+  border-radius: 8px;
   padding: 12px;
   margin-bottom: 10px;
   cursor: pointer;
@@ -603,7 +603,7 @@ onBeforeUnmount(stopPolling)
   &:hover,
   &.active {
     border-color: var(--sau-cinnabar);
-    background: #fbf0eb;
+    background: var(--sau-accent-soft);
   }
 }
 
@@ -667,8 +667,8 @@ onBeforeUnmount(stopPolling)
   > div {
     padding: 10px 12px;
     border: 1px solid var(--sau-line);
-    border-radius: 10px;
-    background: #f8f4ee;
+    border-radius: 8px;
+    background: var(--sau-paper-muted);
     display: grid;
     gap: 4px;
   }
@@ -715,9 +715,9 @@ onBeforeUnmount(stopPolling)
 }
 
 .breakdown-card {
-  border: 1px solid #e5c8be;
-  background: #fff8f3;
-  border-radius: 12px;
+  border: 1px solid var(--sau-line);
+  background: var(--sau-warm-soft);
+  border-radius: 8px;
   padding: 16px;
 
   h3 {
@@ -744,7 +744,7 @@ onBeforeUnmount(stopPolling)
   li {
     margin-bottom: 6px;
     line-height: 1.6;
-    color: #374151;
+    color: var(--sau-ink);
   }
 }
 
@@ -816,12 +816,12 @@ onBeforeUnmount(stopPolling)
   gap: 8px;
   align-items: baseline;
   padding: 6px 0;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--sau-line);
 }
 
 .log-time,
 .log-percent {
-  color: #9a8f82;
+  color: var(--sau-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -848,9 +848,9 @@ onBeforeUnmount(stopPolling)
   color: var(--sau-ink);
   font-weight: 650;
   padding: 16px;
-  background: #f8f4ee;
+  background: var(--sau-paper-muted);
   border-left: 4px solid var(--sau-cinnabar);
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .insight-grid {
@@ -862,7 +862,7 @@ onBeforeUnmount(stopPolling)
 
 .insight-box {
   border: 1px solid var(--sau-line);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 14px;
 
   ul {
@@ -897,7 +897,7 @@ onBeforeUnmount(stopPolling)
   border: 1px solid var(--sau-line);
   border-radius: 10px;
   padding: 14px;
-  background: #fffefa;
+  background: var(--sau-paper);
 
   p {
     margin: 8px 0 0;
@@ -916,8 +916,8 @@ onBeforeUnmount(stopPolling)
 
 .empty-note {
   padding: 14px;
-  border: 1px dashed #cfc3b7;
-  border-radius: 10px;
+  border: 1px dashed var(--sau-line);
+  border-radius: 8px;
   color: var(--sau-ink-soft);
 }
 
@@ -927,8 +927,8 @@ onBeforeUnmount(stopPolling)
   gap: 10px;
   padding: 12px;
   border: 1px solid var(--sau-line);
-  border-radius: 10px;
-  background: #fffefa;
+  border-radius: 8px;
+  background: var(--sau-paper);
 
   span {
     width: 24px;

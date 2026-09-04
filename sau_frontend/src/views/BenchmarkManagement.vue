@@ -482,7 +482,7 @@ onMounted(async () => {
 <style lang="scss" scoped>
 .benchmark-management { display: grid; gap: 16px; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--sau-line); }
-.page-header h1 { margin: 0; color: var(--sau-ink); font-size: 28px; font-weight: 650; letter-spacing: -0.02em; }
+.page-header h1 { margin: 0; color: var(--sau-ink); font-size: 28px; font-weight: 650; letter-spacing: 0; }
 .page-header p, .card-subtitle { margin: 6px 0 0; color: var(--sau-ink-soft); font-size: 13px; }
 .card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .card-title, .card-header > span { font-weight: 600; }
@@ -491,15 +491,15 @@ onMounted(async () => {
 .monitor-alert, .monitor-table { margin-bottom: 14px; }
 .rules-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 36px; }
 .rule-field { min-width: 0; }
-.rule-field > span { display: block; margin-bottom: 8px; color: #606266; font-size: 13px; }
+.rule-field > span { display: block; margin-bottom: 8px; color: var(--sau-ink-soft); font-size: 13px; }
 .compact-rule { max-width: 260px; }
 .monitor-account-name { font-weight: 600; }
 .editable-account-name { cursor: text; width: fit-content; border-bottom: 1px dashed transparent; }
-.editable-account-name:hover { color: #409eff; border-bottom-color: #409eff; }
+.editable-account-name:hover { color: var(--sau-accent); border-bottom-color: var(--sau-accent); }
 .account-name-editor { max-width: 260px; }
-.monitor-account-id { margin-top: 4px; color: #909399; font-size: 12px; }
-.monitor-rule-summary { margin-top: 5px; color: #606266; font-size: 12px; }
-.muted { color: #909399; font-size: 12px; }
+.monitor-account-id { margin-top: 4px; color: var(--sau-muted); font-size: 12px; }
+.monitor-rule-summary { margin-top: 5px; color: var(--sau-ink-soft); font-size: 12px; }
+.muted { color: var(--sau-muted); font-size: 12px; }
 @media (max-width: 760px) {
   .page-header { flex-direction: column; }
   .monitor-bind-row { flex-direction: column; }

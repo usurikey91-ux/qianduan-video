@@ -1,9 +1,13 @@
 <template>
   <el-container class="app-shell">
-    <el-aside :width="isCollapse ? '72px' : '248px'" class="app-sidebar">
+    <el-aside
+      :width="mobileSidebarOpen || !isCollapse ? '248px' : '72px'"
+      class="app-sidebar"
+      :class="{ 'mobile-open': mobileSidebarOpen }"
+    >
       <div class="brand">
         <div class="brand-mark">拆</div>
-        <div v-show="!isCollapse" class="brand-copy">
+        <div v-show="!isCollapse || mobileSidebarOpen" class="brand-copy">
           <strong>自媒体内容拆解</strong>
           <span>跨平台事实复盘工作台</span>
         </div>
@@ -12,7 +16,7 @@
       <el-menu
         :router="true"
         :default-active="activeMenu"
-        :collapse="isCollapse"
+        :collapse="isCollapse && !mobileSidebarOpen"
         class="sidebar-menu"
       >
         <el-menu-item index="/benchmark-management">
@@ -41,11 +45,26 @@
         </el-menu-item>
       </el-menu>
 
-      <div v-show="!isCollapse" class="sidebar-note">
-        <span>本周重点</span>
-        <strong>把每条内容变成下一条的证据</strong>
+      <div class="sidebar-footer">
+        <div v-show="!isCollapse || mobileSidebarOpen" class="sidebar-note">
+          <span>本周重点</span>
+          <strong>把每条内容变成下一条的证据</strong>
+        </div>
+        <div v-if="!isCollapse || mobileSidebarOpen" class="theme-switch" role="group" aria-label="界面主题">
+          <button :class="{ active: theme === 'light' }" :aria-pressed="theme === 'light'" @click="setTheme('light')">
+            <el-icon><Sunny /></el-icon><span>日间</span>
+          </button>
+          <button :class="{ active: theme === 'dark' }" :aria-pressed="theme === 'dark'" @click="setTheme('dark')">
+            <el-icon><Moon /></el-icon><span>夜间</span>
+          </button>
+        </div>
+        <button v-else class="theme-icon-toggle" :aria-label="theme === 'dark' ? '切换到日间模式' : '切换到夜间模式'" @click="toggleTheme">
+          <el-icon><Sunny v-if="theme === 'dark'" /><Moon v-else /></el-icon>
+        </button>
       </div>
     </el-aside>
+
+    <button v-if="mobileSidebarOpen" class="sidebar-backdrop" aria-label="关闭侧边栏" @click="mobileSidebarOpen = false" />
 
     <el-container class="workspace">
       <el-header class="topbar">
@@ -73,7 +92,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Aim,
@@ -83,12 +102,17 @@ import {
   Plus,
   Refresh,
   Setting,
+  Sunny,
+  Moon,
   TrendCharts,
   VideoPlay
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const isCollapse = ref(false)
+const mobileSidebarOpen = ref(false)
+const preferredTheme = localStorage.getItem('sau-theme')
+const theme = ref(preferredTheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'))
 
 const pageMeta = {
   '/': { kicker: 'Benchmark', title: '对标内容库' },
@@ -106,8 +130,23 @@ const routeMeta = computed(() => pageMeta[route.path] || pageMeta['/'])
 const showWorkspaceActions = computed(() => !['/platform-connections', '/own-content-review', '/agent-models', '/video-inspector'].includes(route.path))
 
 const toggleSidebar = () => {
+  if (window.matchMedia('(max-width: 860px)').matches) {
+    mobileSidebarOpen.value = !mobileSidebarOpen.value
+    return
+  }
   isCollapse.value = !isCollapse.value
 }
+
+const setTheme = (value) => { theme.value = value }
+const toggleTheme = () => setTheme(theme.value === 'dark' ? 'light' : 'dark')
+
+watch(theme, (value) => {
+  document.documentElement.classList.toggle('dark', value === 'dark')
+  document.documentElement.dataset.theme = value
+  localStorage.setItem('sau-theme', value)
+}, { immediate: true })
+
+watch(() => route.path, () => { mobileSidebarOpen.value = false })
 
 </script>
 
@@ -123,9 +162,7 @@ const toggleSidebar = () => {
   height: 100vh;
   overflow: hidden;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    radial-gradient(circle at 20% 0%, rgba(197, 75, 60, 0.22), transparent 28%),
-    linear-gradient(180deg, #1d2b3a 0%, #162332 100%);
+  background: var(--sau-sidebar);
   transition: width 0.24s ease;
 }
 
@@ -145,7 +182,7 @@ const toggleSidebar = () => {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  background: var(--sau-cinnabar);
+  background: var(--sau-accent);
   color: #ffffff;
   font-weight: 800;
 }
@@ -177,7 +214,7 @@ const toggleSidebar = () => {
   --el-menu-bg-color: transparent;
   --el-menu-text-color: #b9c2c9;
   --el-menu-hover-bg-color: rgba(255, 253, 249, 0.1);
-  --el-menu-active-color: #1d2b3a;
+  --el-menu-active-color: var(--sau-sidebar);
 
   :deep(.el-menu-item) {
     height: 42px;
@@ -188,7 +225,7 @@ const toggleSidebar = () => {
 
   :deep(.el-menu-item.is-active) {
     background: rgba(255, 253, 249, 0.96);
-    color: #1d2b3a;
+    color: var(--sau-sidebar);
     box-shadow: 0 6px 18px rgba(8, 17, 26, 0.18);
   }
 
@@ -198,11 +235,16 @@ const toggleSidebar = () => {
   }
 }
 
-.sidebar-note {
+.sidebar-footer {
   position: absolute;
-  right: 14px;
-  bottom: 14px;
-  left: 14px;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.sidebar-note {
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
@@ -226,6 +268,46 @@ const toggleSidebar = () => {
   }
 }
 
+.theme-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.13);
+
+  button {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #bfc9c2;
+    cursor: pointer;
+  }
+
+  button.active {
+    background: #f3f6f2;
+    color: #26352d;
+    box-shadow: 0 2px 8px rgba(8, 20, 13, 0.22);
+  }
+}
+
+.theme-icon-toggle {
+  width: 40px;
+  height: 40px;
+  justify-self: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef3ef;
+  cursor: pointer;
+}
+
 .workspace {
   min-width: 0;
 }
@@ -237,7 +319,7 @@ const toggleSidebar = () => {
   align-items: center;
   gap: 16px;
   border-bottom: 1px solid var(--sau-line);
-  background: rgba(255, 253, 249, 0.88);
+  background: var(--sau-topbar);
   backdrop-filter: blur(12px);
 }
 
@@ -260,7 +342,7 @@ const toggleSidebar = () => {
   }
 
   span {
-    color: var(--sau-brass);
+  color: var(--sau-accent);
     font-size: 12px;
   }
 
@@ -282,14 +364,32 @@ const toggleSidebar = () => {
   min-height: calc(100vh - 72px);
   padding: 24px;
   overflow-y: auto;
-  background:
-    linear-gradient(rgba(255, 253, 249, 0.38), rgba(255, 253, 249, 0.38)),
-    repeating-linear-gradient(0deg, transparent 0, transparent 31px, rgba(29, 43, 58, 0.018) 32px);
+  background: var(--sau-page);
 }
+
+.sidebar-backdrop { display: none; }
 
 @media (max-width: 860px) {
   .app-sidebar {
-    display: none;
+    position: fixed;
+    z-index: 40;
+    width: 248px !important;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .app-sidebar.mobile-open {
+    transform: translateX(0);
+    box-shadow: 18px 0 50px rgba(8, 20, 13, 0.28);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    z-index: 30;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgba(12, 18, 15, 0.42);
   }
 
   .topbar {
