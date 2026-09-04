@@ -31,6 +31,7 @@ def run_pipeline(
     target_direction,
     *,
     force_transcription=False,
+    transcribe_only=False,
     load_video,
     get_transcript,
     update_progress,
@@ -115,6 +116,13 @@ def run_pipeline(
                 analysis_basis="transcript",
                 target_direction=target_direction, radar_json=None, error_message=None,
             )
+        if transcribe_only:
+            update_progress(
+                video_id, "complete", 100, "原视频转写完成", status="success",
+                analysis_basis="transcript", radar_json=None,
+                finished_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            return
         update_progress(video_id, "analyzing", 84, "正在调用已配置的 AI 模型拆解视频正文与传播机制")
         radar = normalize_radar_result(
             run_structured(build_prompt(video, transcript, target_direction), schema_factory())

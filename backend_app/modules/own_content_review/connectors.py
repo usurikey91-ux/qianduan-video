@@ -126,6 +126,8 @@ _DOUYIN_FIXED_RAW_LABELS = {
     "2s跳出率", "2秒跳出率", "封面点击率",
 }
 
+_IGNORED_TRAFFIC_LABELS = ("DOU+", "抖加", "同城", "好友", "站外")
+
 
 def _parse_json_object(value) -> dict:
     if isinstance(value, dict):
@@ -167,6 +169,8 @@ def _normalize_official_metrics(raw_metrics) -> list[dict]:
         label = str(raw_label or "").strip()
         if not label or label in _DOUYIN_FIXED_RAW_LABELS or raw_value in (None, ""):
             continue
+        if any(ignored.lower() in label.lower() for ignored in _IGNORED_TRAFFIC_LABELS):
+            continue
         value = str(raw_value).strip()
         section = _official_metric_section(label)
         sections.setdefault(section, []).append({"label": label, "value": value})
@@ -183,10 +187,14 @@ def _normalize_douyin_rows(rows: list[dict]) -> list[dict]:
         group_rows = list(group)
         item = next((row for row in group_rows if row.get("source") == "browser_detail"), group_rows[0])
         raw_metrics = _parse_json_object(item.get("raw_metric_json"))
+        exposure_count = item.get("exposure_count")
+        if exposure_count in (None, ""):
+            exposure_count = raw_metrics.get("exposure_count")
         merged.append({
             "title": item.get("title") or "未命名作品",
             "video_url": item.get("video_url") or "",
             "published_at": _format_douyin_time(item.get("publish_time")),
+            "exposure_count": _value_or_none(exposure_count),
             "play_count": item.get("play_count"),
             "like_count": item.get("like_count"),
             "collect_count": item.get("collect_count"),

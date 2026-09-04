@@ -15,17 +15,13 @@
         :collapse="isCollapse"
         class="sidebar-menu"
       >
-        <el-menu-item index="/">
-          <el-icon><HomeFilled /></el-icon>
-          <template #title>增长总览</template>
-        </el-menu-item>
         <el-menu-item index="/benchmark-management">
           <el-icon><Aim /></el-icon>
           <template #title>对标内容库</template>
         </el-menu-item>
         <el-menu-item index="/idea-radar">
           <el-icon><DataAnalysis /></el-icon>
-          <template #title>对标作品事实</template>
+          <template #title>入选作品列表</template>
         </el-menu-item>
         <el-menu-item index="/platform-connections">
           <el-icon><Connection /></el-icon>
@@ -65,7 +61,7 @@
             <el-button text :icon="Refresh">同步数据</el-button>
             <el-button type="primary" :icon="Plus">新建复盘</el-button>
           </template>
-          <el-tag type="info" effect="plain">本机模式</el-tag>
+          <el-tag v-if="route.path !== '/video-inspector'" type="info" effect="plain">本机模式</el-tag>
         </div>
       </el-header>
 
@@ -84,7 +80,6 @@ import {
   Connection,
   DataAnalysis,
   Fold,
-  HomeFilled,
   Plus,
   Refresh,
   Setting,
@@ -96,9 +91,9 @@ const route = useRoute()
 const isCollapse = ref(false)
 
 const pageMeta = {
-  '/': { kicker: 'Dashboard', title: '增长总览' },
+  '/': { kicker: 'Benchmark', title: '对标内容库' },
   '/benchmark-management': { kicker: 'Benchmark', title: '对标内容库' },
-  '/idea-radar': { kicker: 'Evidence', title: '对标作品事实' },
+  '/idea-radar': { kicker: 'Evidence', title: '入选作品列表' },
   '/platform-connections': { kicker: 'Connections', title: '账号连接' },
   '/own-content-review': { kicker: 'Review', title: '作品复盘' },
   '/video-inspector': { kicker: 'Video Jiexi', title: '视频解析' },
@@ -108,7 +103,7 @@ const pageMeta = {
 
 const activeMenu = computed(() => route.path)
 const routeMeta = computed(() => pageMeta[route.path] || pageMeta['/'])
-const showWorkspaceActions = computed(() => !['/platform-connections', '/own-content-review', '/agent-models'].includes(route.path))
+const showWorkspaceActions = computed(() => !['/platform-connections', '/own-content-review', '/agent-models', '/video-inspector'].includes(route.path))
 
 const toggleSidebar = () => {
   isCollapse.value = !isCollapse.value

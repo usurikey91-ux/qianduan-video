@@ -71,8 +71,8 @@ export const benchmarkApi = {
     return http.post('/benchmark/douyin/auto-discover', { keywords, limit, maxVideos })
   },
 
-  getIdeaRadarVideos: (limit = 80) => {
-    return http.get('/idea-radar/douyin/videos', { limit })
+  getIdeaRadarVideos: (limit = 80, days = 0) => {
+    return http.get('/idea-radar/douyin/videos', { limit, days })
   },
 
   analyzeIdeaRadarVideo: (videoId, options = {}) => {

@@ -136,8 +136,11 @@ def save_runtime_settings(settings):
 
 DEFAULT_BENCHMARK_MONITORING_RULES = {
     "reference_work_count": 20,
-    "hot_multiple": 3.0,
-    "very_hot_multiple": 5.0,
+    # OpenCLI Admin still expects the legacy hot/very-hot pair.  The workbench
+    # exposes only hot_multiple as the single inclusion threshold; the second
+    # value is kept half a step above it solely for connector compatibility.
+    "hot_multiple": 5.0,
+    "very_hot_multiple": 5.5,
     "interval_hours": 4,
     "inherit_global": True,
 }
@@ -145,21 +148,26 @@ DEFAULT_BENCHMARK_MONITORING_RULES = {
 
 def normalize_benchmark_monitoring_rules(payload=None, *, inherit_global=True):
     source = payload if isinstance(payload, dict) else {}
+    legacy_hot = float(source.get("hot_multiple", source.get("hotMultiple", 5)))
+    legacy_very_hot = float(source.get("very_hot_multiple", source.get("veryHotMultiple", 5.5)))
+    # Migrate the former default (3x hot / 5x very hot) to the new single 5x
+    # inclusion threshold. Other saved custom values keep their lower bound.
+    legacy_pair = legacy_hot == 3.0 and (
+        legacy_very_hot == 5.0
+        or ("very_hot_multiple" not in source and "veryHotMultiple" not in source)
+    )
+    entry_multiple = 5.0 if legacy_pair else legacy_hot
     rules = {
         "reference_work_count": int(source.get("reference_work_count", source.get("referenceWorkCount", 20))),
-        "hot_multiple": float(source.get("hot_multiple", source.get("hotMultiple", 3))),
-        "very_hot_multiple": float(source.get("very_hot_multiple", source.get("veryHotMultiple", 5))),
+        "hot_multiple": entry_multiple,
+        "very_hot_multiple": entry_multiple + 0.5,
         "interval_hours": int(source.get("interval_hours", source.get("intervalHours", 4))),
         "inherit_global": bool(source.get("inherit_global", source.get("inheritGlobal", inherit_global))),
     }
     if not 5 <= rules["reference_work_count"] <= 50:
         raise ValueError("参考作品数必须在 5 到 50 条之间")
     if not 1.5 <= rules["hot_multiple"] <= 10:
-        raise ValueError("火倍数必须在 1.5 到 10 之间")
-    if not 2 <= rules["very_hot_multiple"] <= 20:
-        raise ValueError("特别火倍数必须在 2 到 20 之间")
-    if rules["very_hot_multiple"] <= rules["hot_multiple"]:
-        raise ValueError("特别火倍数必须大于火倍数")
+        raise ValueError("入选倍数必须在 1.5 到 10 之间")
     if rules["interval_hours"] not in {1, 2, 4, 8, 12, 24}:
         raise ValueError("巡检频率只支持 1、2、4、8、12 或 24 小时")
     return rules
@@ -784,6 +792,7 @@ OWN_DOUYIN_FIELD_ALIASES = {
     "published_at": ["发布时间", "published_at", "发布时间 "],
     "content_format": ["体裁", "内容体裁", "content_format"],
     "visibility_status": ["审核状态", "状态", "visibility_status"],
+    "exposure_count": ["曝光量", "曝光次数", "exposure_count"],
     "play_count": ["播放量", "播放次数", "play_count"],
     "completion_rate": ["完播率", "completion_rate"],
     "five_sec_completion_rate": ["5s完播率", "5秒完播率", "five_sec_completion_rate"],
@@ -801,7 +810,7 @@ OWN_DOUYIN_FIELD_ALIASES = {
 }
 
 OWN_DOUYIN_INTEGER_FIELDS = {
-    "play_count", "like_count", "share_count", "comment_count", "collect_count",
+    "exposure_count", "play_count", "like_count", "share_count", "comment_count", "collect_count",
     "profile_visit_count", "follower_delta",
 }
 OWN_DOUYIN_FLOAT_FIELDS = {
@@ -1575,10 +1584,11 @@ def parse_metric_number(value):
     return int(number)
 
 
-def list_idea_radar_videos(limit=80):
+def list_idea_radar_videos(limit=80, days=0):
     sync_hot_monitor_works()
+    rules = get_benchmark_monitoring_defaults()
     return benchmark_repository.list_idea_radar_videos(
-        get_db_path(), parse_metric_number, limit
+        get_db_path(), parse_metric_number, limit, rules["hot_multiple"], days
     )
 
 
@@ -1840,7 +1850,7 @@ def load_idea_radar_video(video_id):
     return benchmark_repository.get_video(get_db_path(), video_id, include_account=True)
 
 
-def run_idea_radar_pipeline(video_id, target_direction, force_transcription=False):
+def run_idea_radar_pipeline(video_id, target_direction, force_transcription=False, transcribe_only=False):
     def run_structured_with_fallback(prompt, schema):
         try:
             return run_codex_structured(prompt, schema)
@@ -1862,6 +1872,7 @@ def run_idea_radar_pipeline(video_id, target_direction, force_transcription=Fals
         video_id,
         target_direction,
         force_transcription=force_transcription,
+        transcribe_only=transcribe_only,
         load_video=load_idea_radar_video,
         get_transcript=get_idea_radar_transcript,
         update_progress=update_idea_radar_progress,
@@ -1877,7 +1888,7 @@ def run_idea_radar_pipeline(video_id, target_direction, force_transcription=Fals
     )
 
 
-def start_idea_radar_pipeline(video_id, target_direction, force=False, force_transcription=False):
+def start_idea_radar_pipeline(video_id, target_direction, force=False, force_transcription=False, transcribe_only=False):
     current = get_idea_radar_transcript(video_id)
     started = start_pipeline_task(
         video_id,
@@ -1888,6 +1899,7 @@ def start_idea_radar_pipeline(video_id, target_direction, force=False, force_tra
         pipeline_fn=run_idea_radar_pipeline,
         force=force,
         force_transcription=force_transcription,
+        transcribe_only=transcribe_only,
     )
     return started or get_idea_radar_transcript(video_id)
 
@@ -2151,6 +2163,10 @@ def list_opencli_monitor_accounts():
         accounts = opencli_monitor_service.list_accounts(
             platform, load_runtime_settings()
         )
+        for account in accounts:
+            account["monitoring_rules"] = normalize_benchmark_monitoring_rules(
+                account.get("monitoring_rules"), inherit_global=True
+            )
         return jsonify({"code": 200, "msg": "success", "data": accounts}), 200
     except opencli_monitor_service.OpenCLIAdminError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
@@ -2218,16 +2234,40 @@ def list_opencli_monitor_works():
 
 @app.route('/integrations/video-jiexi/status', methods=['GET'])
 def video_jiexi_status():
-    """Return health information for the optional local video-jiexi service."""
+    """Return health information for the bundled parser service."""
     settings = load_runtime_settings()
     configured_url = video_jiexi_client.base_url(settings)
     if not configured_url:
         return jsonify({"code": 200, "msg": "success", "data": {"configured": False, "available": False, "base_url": ""}}), 200
     try:
         health = video_jiexi_client.health(settings)
-        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "base_url": configured_url, "health": health}}), 200
+        embedded = configured_url.startswith("http://127.0.0.1:") and configured_url.rsplit(":", 1)[-1] != "4200"
+        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "embedded": embedded, "base_url": "" if embedded else configured_url, "download_dir": str(video_jiexi_client.download_root(settings) or health.get("downloadDir") or ""), "health": health}}), 200
     except video_jiexi_client.VideoJiexiError as exc:
-        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "base_url": configured_url, "available": False, "error": str(exc)}}), 200
+        return jsonify({"code": 200, "msg": "success", "data": {"configured": True, "embedded": configured_url.startswith("http://127.0.0.1:"), "base_url": "", "available": False, "error": str(exc)}}), 200
+
+
+@app.route('/integrations/video-jiexi/open-folder', methods=['POST'])
+def video_jiexi_open_folder():
+    """Open the local video-jiexi download directory in File Explorer."""
+    settings = load_runtime_settings()
+    folder = video_jiexi_client.download_root(settings)
+    if folder is None:
+        return jsonify({"code": 400, "msg": "未配置视频下载目录", "data": None}), 400
+    folder = folder.expanduser().resolve()
+    if not folder.exists():
+        folder.mkdir(parents=True, exist_ok=True)
+    try:
+        # Launch Explorer as a separate foreground shell.  This is more
+        # reliable than os.startfile when the workbench is running behind a
+        # browser window and the user explicitly asked to open the folder.
+        if os.name == 'nt':
+            subprocess.Popen(['explorer.exe', str(folder)], close_fds=True)
+        else:
+            os.startfile(str(folder))
+    except (AttributeError, OSError) as exc:
+        return jsonify({"code": 500, "msg": f"无法打开下载目录：{exc}", "data": {"path": str(folder)}}), 500
+    return jsonify({"code": 200, "msg": "success", "data": {"path": str(folder)}}), 200
 
 
 @app.route('/integrations/video-jiexi/inspect', methods=['POST'])
@@ -2513,10 +2553,11 @@ def get_own_review_sources():
         "douyin": {
             "label": "抖音作品复盘", "connector": "Kuhakucai/douyin-mcp",
             "status": "sync_available" if douyin_available else "manual_import", "supports": [
-                "播放", "点赞", "评论", "收藏", "分享", "完播率", "5秒完播率", "2秒跳出率",
-                "粉丝/非粉丝占比", "作品主页访问", "账号搜索", "作品搜索", "粉丝趋势", "用户画像开放状态",
+                "曝光", "播放", "封面点击率", "平均播放时长", "完播率", "5秒完播率", "2秒跳出率",
+                "推荐页", "搜索", "关注页", "个人主页", "粉丝/非粉丝占比", "作品主页访问",
+                "粉丝趋势", "性别/年龄/地域画像", "点赞", "评论", "收藏", "分享",
             ],
-            "note": ("可直接调用本机已安装的 douyin-mcp；作品详情与账号数据中心实际返回的流量、粉丝和画像字段会原样展示，也支持 CSV/XLSX 备用导入。"
+            "note": ("以自然视频流量为主：优先展示曝光、点击、留存、自然来源和观众构成；DOU+、同城、好友与站外流量不进入核心展示。"
                      if douyin_available else connector_status["douyin"].get("error")),
         },
         "xiaohongshu": {
@@ -2669,7 +2710,8 @@ def create_douyin_benchmark_video_analysis(video_id):
 def get_idea_radar_videos():
     try:
         limit = request.args.get("limit", 80)
-        videos = list_idea_radar_videos(limit)
+        days = request.args.get("days", 0)
+        videos = list_idea_radar_videos(limit, days)
         return jsonify({"code": 200, "msg": "success", "data": videos}), 200
     except Exception as e:
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
@@ -2678,8 +2720,6 @@ def get_idea_radar_videos():
 @app.route('/idea-radar/douyin/videos/<int:video_id>/analyze', methods=['POST'])
 def analyze_idea_radar_video(video_id):
     try:
-        if load_runtime_settings().get("factsOnlyMode") is True:
-            return jsonify({"code": 409, "msg": "事实模式已启用，不执行 AI 分析", "data": None}), 409
         payload = request.get_json(silent=True) or {}
         # 爆款拆解不依赖账号定位；保留空值只是兼容旧数据库字段。
         target_direction = ""
@@ -2690,6 +2730,7 @@ def analyze_idea_radar_video(video_id):
             target_direction,
             force=bool(payload.get("force")),
             force_transcription=bool(payload.get("forceTranscription") or payload.get("force_transcription")),
+            transcribe_only=bool(load_runtime_settings().get("factsOnlyMode")),
         )
         return jsonify({"code": 200, "msg": "success", "data": task}), 200
     except Exception as e:

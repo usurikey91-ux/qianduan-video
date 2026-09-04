@@ -37,6 +37,7 @@ def ensure_tables(db_path):
         CREATE TABLE IF NOT EXISTS douyin_own_video_metrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             video_id INTEGER NOT NULL UNIQUE,
+            exposure_count INTEGER,
             play_count INTEGER,
             completion_rate REAL,
             five_sec_completion_rate REAL,
@@ -54,6 +55,13 @@ def ensure_tables(db_path):
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """)
+        metric_columns = {
+            row[1] for row in cursor.execute("PRAGMA table_info(douyin_own_video_metrics)")
+        }
+        if "exposure_count" not in metric_columns:
+            cursor.execute(
+                "ALTER TABLE douyin_own_video_metrics ADD COLUMN exposure_count INTEGER"
+            )
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS douyin_own_account_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,11 +132,12 @@ def save_import(db_path, rows, account_name, source_key_fn):
             ).fetchone()[0]
             cursor.execute("""
             INSERT INTO douyin_own_video_metrics
-                (video_id, play_count, completion_rate, five_sec_completion_rate, cover_click_rate,
+                (video_id, exposure_count, play_count, completion_rate, five_sec_completion_rate, cover_click_rate,
                  two_sec_bounce_rate, avg_play_duration, like_count, share_count, comment_count,
                  collect_count, profile_visit_count, follower_delta, raw_data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(video_id) DO UPDATE SET
+                exposure_count = excluded.exposure_count,
                 play_count = excluded.play_count,
                 completion_rate = excluded.completion_rate,
                 five_sec_completion_rate = excluded.five_sec_completion_rate,
@@ -144,7 +153,7 @@ def save_import(db_path, rows, account_name, source_key_fn):
                 raw_data = excluded.raw_data,
                 updated_at = CURRENT_TIMESTAMP
             """, (
-                video_id, item.get("play_count"), item.get("completion_rate"),
+                video_id, item.get("exposure_count"), item.get("play_count"), item.get("completion_rate"),
                 item.get("five_sec_completion_rate"), item.get("cover_click_rate"),
                 item.get("two_sec_bounce_rate"), item.get("avg_play_duration"),
                 item.get("like_count"), item.get("share_count"), item.get("comment_count"),
@@ -210,7 +219,7 @@ def list_videos(db_path, limit=100):
         rows = conn.execute("""
         SELECT
             v.*, a.name AS account_name,
-            m.play_count, m.completion_rate, m.five_sec_completion_rate,
+            m.exposure_count, m.play_count, m.completion_rate, m.five_sec_completion_rate,
             m.cover_click_rate, m.two_sec_bounce_rate, m.avg_play_duration,
             m.like_count, m.share_count, m.comment_count, m.collect_count,
             m.profile_visit_count, m.follower_delta

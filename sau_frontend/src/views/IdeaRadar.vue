@@ -2,8 +2,8 @@
   <div class="idea-radar">
     <div class="page-header">
       <div>
-        <h1>对标作品事实</h1>
-        <p>只展示对标作品的公开指标、来源链接和原始转写，不进行 AI 分析或文案改写。</p>
+        <h1>入选作品列表</h1>
+        <p>只展示达到入选门槛的对标作品公开指标、来源链接和原始转写，不进行 AI 分析或文案改写。</p>
       </div>
       <div class="header-actions">
         <el-button type="primary" :loading="loadingVideos" @click="fetchVideos">
@@ -15,11 +15,25 @@
     <div class="radar-layout">
       <section class="video-panel">
         <div class="panel-title">
-          <span>对标作品列表</span>
+          <span>入选作品</span>
           <small>{{ filteredVideos.length }} 条</small>
         </div>
         <div class="filter-row">
           <el-input v-model="keyword" placeholder="搜索标题 / 账号" clearable />
+        </div>
+        <div class="time-filter">
+          <div class="time-filter-label">
+            <span>发布时间</span>
+            <strong>{{ selectedDays > 0 ? `近 ${selectedDays} 天` : '不限时间' }}</strong>
+          </div>
+          <el-slider
+            v-model="selectedDays"
+            :min="0"
+            :max="90"
+            :step="5"
+            :marks="{ 0: '不限', 30: '30天', 60: '60天', 90: '90天' }"
+            @change="fetchVideos"
+          />
         </div>
 
         <el-scrollbar height="calc(100vh - 230px)" v-loading="loadingVideos">
@@ -33,9 +47,7 @@
             <div class="video-meta">
               <span class="account">{{ video.account_name || '对标账号' }}</span>
               <span class="likes">
-                <el-tag size="small" :type="video.hot_status === 'very_hot' ? 'danger' : 'warning'">
-                  {{ video.hot_status === 'very_hot' ? '特别火' : '火' }}
-                </el-tag>
+                <el-tag size="small" type="danger" effect="plain">已入选</el-tag>
                 <span>{{ video.relative_multiple ? `${Number(video.relative_multiple).toFixed(1)}x` : '—' }}</span>
               </span>
             </div>
@@ -53,9 +65,7 @@
               <h2>{{ radar.viral_theme }}</h2>
             </div>
             <div class="source-actions">
-              <el-tag v-if="selectedVideo?.hot_status" :type="selectedVideo.hot_status === 'very_hot' ? 'danger' : 'warning'">
-                {{ selectedVideo.hot_status === 'very_hot' ? '特别火' : '火' }}
-              </el-tag>
+              <el-tag v-if="selectedVideo?.hot_status" type="danger" effect="plain">已入选</el-tag>
               <el-link :href="radar.source.video_url" target="_blank" type="primary">打开原作品</el-link>
               <el-button size="small" type="success" @click="openVideoInspector">解析视频</el-button>
             </div>
@@ -282,7 +292,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { benchmarkApi } from '@/api/benchmark'
 import { useRouter } from 'vue-router'
@@ -292,6 +302,8 @@ const selectedVideo = ref(null)
 const radar = ref(null)
 const taskState = ref(null)
 const keyword = ref('')
+const savedDays = Number(localStorage.getItem('ideaRadarDays') || 0)
+const selectedDays = ref(Number.isFinite(savedDays) ? Math.min(90, Math.max(0, savedDays)) : 0)
 const loadingVideos = ref(false)
 const analyzing = ref(false)
 const FACTS_ONLY_MODE = true
@@ -318,6 +330,10 @@ const filteredVideos = computed(() => {
   })
 })
 
+watch(selectedDays, (value) => {
+  localStorage.setItem('ideaRadarDays', String(value))
+})
+
 const formatNumber = (value) => {
   const n = Number(value || 0)
   if (n >= 10000) return `${(n / 10000).toFixed(1)}万`
@@ -338,8 +354,13 @@ const formatDuration = (seconds) => {
 const fetchVideos = async () => {
   loadingVideos.value = true
   try {
-    const res = await benchmarkApi.getIdeaRadarVideos(100)
+    const res = await benchmarkApi.getIdeaRadarVideos(100, selectedDays.value)
     videos.value = res.data || []
+    if (selectedVideo.value && !videos.value.some((video) => video.id === selectedVideo.value.id)) {
+      selectedVideo.value = null
+      radar.value = null
+      taskState.value = null
+    }
     if (!selectedVideo.value && videos.value.length) {
       await selectVideo(videos.value[0])
     }
@@ -363,6 +384,14 @@ const selectVideo = async (video) => {
     const res = await benchmarkApi.getIdeaRadarStatus(video.id)
     if (token !== selectionToken) return
     applyTaskState(res.data)
+    if (!res.data?.cleaned_transcript && res.data?.status !== 'processing') {
+      const task = await benchmarkApi.analyzeIdeaRadarVideo(video.id, { forceTranscription: true })
+      if (token !== selectionToken) return
+      applyTaskState(task.data)
+      if (task.data?.status === 'processing') startPolling(video.id)
+    } else if (res.data?.status === 'processing') {
+      startPolling(video.id)
+    }
   } catch (error) {
     console.error('获取作品事实数据失败:', error)
     ElMessage.error('获取作品事实数据失败')
@@ -478,6 +507,30 @@ onBeforeUnmount(stopPolling)
 
 .filter-row {
   margin-bottom: 12px;
+}
+
+.time-filter {
+  padding: 10px 8px 18px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--sau-line);
+}
+
+.time-filter-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  color: var(--sau-ink-soft);
+  font-size: 12px;
+
+  strong {
+    color: var(--sau-cinnabar);
+    font-weight: 650;
+  }
+}
+
+.time-filter :deep(.el-slider) {
+  margin: 0 8px;
 }
 
 .video-item {

@@ -19,8 +19,7 @@ Set-Location -LiteralPath $ProjectRoot
 $Services = @(
   @{ name = 'frontend'; port = 5174; uri = 'http://127.0.0.1:5174/'; expected = '<title>自媒体内容拆解工作台</title>' },
   @{ name = 'backend'; port = 5409; uri = 'http://127.0.0.1:5409/benchmark/douyin/accounts'; expected = '"code":200' },
-  @{ name = 'opencli-admin'; port = 8031; uri = 'http://127.0.0.1:8031/docs'; expected = 'OpenCLI Admin' },
-  @{ name = 'video-jiexi'; port = 4200; uri = 'http://127.0.0.1:4200/'; expected = 'Video Jiexi' }
+  @{ name = 'opencli-admin'; port = 8031; uri = 'http://127.0.0.1:8031/docs'; expected = 'OpenCLI Admin' }
 )
 
 function Write-Status([string]$Message) {

@@ -2,7 +2,7 @@
 
 本工作台作为主 UI 和主后端，外部项目只作为可替换的能力提供方；它们可以与工作台同机，也可以部署在独立服务器或容器中：
 
-## video-jiexi（端口 4200）
+## video-jiexi（内置解析引擎）
 
 - `GET /integrations/video-jiexi/status`：检查解析服务是否在线。
 - `POST /integrations/video-jiexi/inspect`：解析公开分享链接。
@@ -10,7 +10,7 @@
 - `GET /integrations/video-jiexi/tasks/{id}`：读取下载进度。
 - `POST /integrations/video-jiexi/import`：把已完成的文件复制到工作台的临时发布文件区并登记数据库，随后可一键送入发布中心。
 
-解析服务是可选提供方，默认不连接任何地址。部署时通过环境变量 `VIDEO_JIEXI_BASE_URL` 或运行时设置 `videoJiexiBaseUrl` 指定服务地址。远程服务建议同时配置 `VIDEO_JIEXI_API_TOKEN`（或 `videoJiexiApiToken`），工作台会通过 `Authorization: Bearer …` 调用；未配置 Token 时仅适合同机受限部署。
+默认情况下，解析引擎由 5409 后端自动启动在本机回环临时端口，用户只需启动 5174 工作台，不需要再启动 4200。高级部署仍可通过环境变量 `VIDEO_JIEXI_BASE_URL` 或运行时设置 `videoJiexiBaseUrl` 指向外部兼容服务；远程服务建议同时配置 `VIDEO_JIEXI_API_TOKEN`（或 `videoJiexiApiToken`）。
 
 只有在两个服务明确共享文件系统、且提供方没有文件接口时，才设置 `VIDEO_JIEXI_DOWNLOAD_DIR` 作为兼容回退；它没有默认路径。
 

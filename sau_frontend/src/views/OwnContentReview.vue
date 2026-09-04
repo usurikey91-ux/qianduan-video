@@ -70,8 +70,8 @@
       <template #header>
         <div class="card-header">
           <div>
-            <strong>抖音后台专属数据</strong>
-            <div class="muted">已登录创作者账号 · 近7天 · 更新于 {{ accountOverview.captured_at || '-' }}</div>
+            <strong>抖音自然视频流量</strong>
+            <div class="muted">已登录创作者账号 · 近7天 · 不含 DOU+、同城、好友与站外流量 · 更新于 {{ accountOverview.captured_at || '-' }}</div>
           </div>
           <el-tag type="success" effect="plain">仅自己的账号可见</el-tag>
         </div>
@@ -80,12 +80,12 @@
         <section class="private-data-section">
           <div class="private-section-heading">
             <div>
-              <strong>账号流量入口</strong>
-              <small>平台当前实际返回的搜索、主页与分享数据</small>
+              <strong>自然流量入口</strong>
+              <small>平台当前实际返回的推荐、搜索、关注与主页数据</small>
             </div>
           </div>
-          <div v-if="accountOverview.traffic_sources?.length" class="private-metric-grid">
-            <div v-for="item in accountOverview.traffic_sources" :key="item.key || item.label" class="private-metric">
+          <div v-if="visibleTrafficSources.length" class="private-metric-grid">
+            <div v-for="item in visibleTrafficSources" :key="item.key || item.label" class="private-metric">
               <span>{{ item.label }}</span>
               <strong>{{ formatMetric(item.value) }}</strong>
               <div v-if="metricTrendValues(item).length" class="trend-bars compact" :title="metricTrendValues(item).join(' → ')">
@@ -99,8 +99,8 @@
         <section class="private-data-section">
           <div class="private-section-heading">
             <div>
-              <strong>粉丝数据</strong>
-              <small>总粉丝、新增、净增、取关与回访</small>
+              <strong>账号与粉丝变化</strong>
+              <small>用于辅助判断视频带来的访问、回访和涨粉</small>
             </div>
           </div>
           <div v-if="accountOverview.fan_metrics?.length" class="private-metric-grid">
@@ -117,8 +117,8 @@
         <section class="private-data-section portrait-section">
           <div class="private-section-heading">
             <div>
-              <strong>用户画像</strong>
-              <small>性别、年龄、地域等以平台权限为准</small>
+              <strong>自然流量用户画像</strong>
+              <small>性别、年龄、地域等仅在平台实际开放时展示</small>
             </div>
           </div>
           <div v-if="accountOverview.audience_profile?.length" class="private-metric-grid">
@@ -165,17 +165,16 @@
       </template>
       <div class="fact-grid">
         <el-statistic title="作品数量" :value="works.length" />
-        <el-statistic :title="`中位${reviewOverview.primaryLabel}`" :value="reviewOverview.primaryMedian" group-separator="," />
-        <el-statistic :title="`最高${reviewOverview.primaryLabel}`" :value="reviewOverview.primaryMaximum" group-separator="," />
-        <el-statistic title="中位互动数" :value="reviewOverview.interactionMedian" group-separator="," />
-      </div>
-      <div v-if="reviewOverview.topWork" class="top-work-line">
-        <span>当前最高{{ reviewOverview.primaryLabel }}作品</span>
-        <el-link v-if="reviewOverview.topWork.video_url" :href="reviewOverview.topWork.video_url" target="_blank" type="primary">
-          {{ reviewOverview.topWork.title || '未命名作品' }}
-        </el-link>
-        <span v-else class="top-work-title">{{ reviewOverview.topWork.title || '未命名作品' }}</span>
-        <strong>{{ formatMetric(reviewOverview.primaryMaximum) }}</strong>
+        <template v-if="activePlatform === 'douyin'">
+          <el-statistic title="中位曝光" :value="reviewOverview.exposureMedian ?? '-'" group-separator="," />
+          <el-statistic title="中位播放" :value="reviewOverview.playMedian" group-separator="," />
+          <el-statistic title="中位5秒完播率" :value="reviewOverview.fiveSecMedian === null ? '-' : reviewOverview.fiveSecMedian * 100" :precision="reviewOverview.fiveSecMedian === null ? 0 : 1" :suffix="reviewOverview.fiveSecMedian === null ? '' : '%'" />
+        </template>
+        <template v-else>
+          <el-statistic :title="`中位${reviewOverview.primaryLabel}`" :value="reviewOverview.primaryMedian" group-separator="," />
+          <el-statistic :title="`最高${reviewOverview.primaryLabel}`" :value="reviewOverview.primaryMaximum" group-separator="," />
+          <el-statistic title="中位互动数" :value="reviewOverview.interactionMedian" group-separator="," />
+        </template>
       </div>
     </el-card>
 
@@ -197,15 +196,18 @@
         <el-table-column v-if="activePlatform === 'douyin'" type="selection" width="48" />
         <el-table-column prop="title" label="作品/笔记" min-width="300" show-overflow-tooltip />
         <el-table-column prop="published_at" label="发布时间" width="180" />
+        <el-table-column v-if="activePlatform === 'douyin' && showMetric('exposure_count')" prop="exposure_count" label="曝光" width="95" sortable />
         <el-table-column v-if="showMetric('play_count')" prop="play_count" label="播放" width="95" sortable />
+        <el-table-column v-if="activePlatform === 'douyin' && showMetric('cover_click_rate')" label="封面点击" width="110" sortable prop="cover_click_rate"><template #default="scope">{{ formatPercent(scope.row.cover_click_rate) }}</template></el-table-column>
+        <el-table-column v-if="activePlatform === 'douyin' && showMetric('two_sec_bounce_rate')" label="2秒跳出" width="105" sortable prop="two_sec_bounce_rate"><template #default="scope">{{ formatPercent(scope.row.two_sec_bounce_rate) }}</template></el-table-column>
+        <el-table-column v-if="activePlatform === 'douyin' && showMetric('five_sec_completion_rate')" label="5秒完播" width="105" sortable prop="five_sec_completion_rate"><template #default="scope">{{ formatPercent(scope.row.five_sec_completion_rate) }}</template></el-table-column>
+        <el-table-column v-if="activePlatform === 'douyin' && showMetric('completion_rate')" label="完播率" width="105" sortable prop="completion_rate"><template #default="scope">{{ formatPercent(scope.row.completion_rate) }}</template></el-table-column>
+        <el-table-column v-if="activePlatform === 'douyin' && showMetric('avg_play_duration')" label="平均播放" width="110" sortable prop="avg_play_duration"><template #default="scope">{{ formatMetric(scope.row.avg_play_duration, 'seconds') }}</template></el-table-column>
+        <el-table-column v-if="showMetric('follower_delta')" label="涨粉" width="90" sortable prop="follower_delta" />
         <el-table-column v-if="showMetric('like_count')" prop="like_count" label="点赞" width="90" sortable />
         <el-table-column v-if="showMetric('collect_count')" prop="collect_count" label="收藏" width="90" sortable />
         <el-table-column v-if="showMetric('comment_count')" prop="comment_count" label="评论" width="90" sortable />
         <el-table-column v-if="showMetric('share_count')" prop="share_count" label="分享" width="90" sortable />
-        <el-table-column v-if="showMetric('completion_rate')" label="完播率" width="105" sortable prop="completion_rate"><template #default="scope">{{ formatPercent(scope.row.completion_rate) }}</template></el-table-column>
-        <el-table-column v-if="showMetric('five_sec_completion_rate')" label="5秒完播" width="105" sortable prop="five_sec_completion_rate"><template #default="scope">{{ formatPercent(scope.row.five_sec_completion_rate) }}</template></el-table-column>
-        <el-table-column v-if="showMetric('two_sec_bounce_rate')" label="2秒跳出" width="105" sortable prop="two_sec_bounce_rate"><template #default="scope">{{ formatPercent(scope.row.two_sec_bounce_rate) }}</template></el-table-column>
-        <el-table-column v-if="showMetric('follower_delta')" label="涨粉" width="90" sortable prop="follower_delta" />
         <el-table-column label="数据时间" width="170"><template #default="scope">{{ scope.row.updated_at || scope.row.created_at || '-' }}</template></el-table-column>
         <el-table-column label="操作" width="90" fixed="right"><template #default="scope"><el-button size="small" link type="primary" @click="openDetails(scope.row)">查看详情</el-button></template></el-table-column>
       </el-table>
@@ -223,12 +225,12 @@
             <strong>{{ formatMetric(detailWork[metric.key], metric.kind) }}</strong>
           </div>
         </div>
-        <div v-if="detailWork.official_metric_sections?.length" class="official-sections">
+        <div v-if="visibleOfficialSections.length" class="official-sections">
           <div class="official-heading">
             <strong>{{ activePlatform === 'douyin' ? '抖音后台专属数据' : '平台官方扩展数据' }}</strong>
             <span>仅展示本次同步实际返回的字段</span>
           </div>
-          <section v-for="section in detailWork.official_metric_sections" :key="section.label" class="official-section">
+          <section v-for="section in visibleOfficialSections" :key="section.label" class="official-section">
             <h4>{{ section.label }}</h4>
             <div class="official-grid">
               <div v-for="item in section.items" :key="item.label" class="official-item">
@@ -285,8 +287,22 @@ const sources = ref({})
 const accountOverview = ref(null)
 const currentSource = computed(() => sources.value[activePlatform.value])
 const canImport = computed(() => Boolean(selectedFile.value && previewData.value?.valid_count > 0))
+const ignoredTrafficLabels = ['DOU+', '抖加', '同城', '好友', '站外']
+const visibleTrafficSources = computed(() => (accountOverview.value?.traffic_sources || []).filter((item) => {
+  const label = String(item.label || '')
+  return label !== '作品分享' && !ignoredTrafficLabels.some((ignored) => label.toLowerCase().includes(ignored.toLowerCase()))
+}))
+const visibleOfficialSections = computed(() => {
+  const sections = detailWork.value?.official_metric_sections || []
+  if (activePlatform.value !== 'douyin') return sections
+  return sections.map((section) => ({
+    ...section,
+    items: (section.items || []).filter((item) => !ignoredTrafficLabels.some((label) => String(item.label || '').toLowerCase().includes(label.toLowerCase())))
+  })).filter((section) => section.items.length)
+})
 
 const numberValue = (value) => {
+  if (value === null || value === undefined || value === '') return null
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
@@ -296,15 +312,15 @@ const medianValue = (values) => {
   const middle = Math.floor(sorted.length / 2)
   return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2)
 }
+const medianFor = (key) => {
+  const values = works.value.map((item) => numberValue(item[key])).filter((value) => value !== null)
+  return values.length ? medianValue(values) : null
+}
 const reviewOverview = computed(() => {
   const hasPlay = works.value.some((item) => numberValue(item.play_count) !== null)
   const primaryKey = hasPlay ? 'play_count' : 'like_count'
   const primaryLabel = hasPlay ? '播放' : '点赞'
   const primaryValues = works.value.map((item) => numberValue(item[primaryKey]))
-  const topWork = works.value.reduce((best, item) => {
-    if (!best) return item
-    return (numberValue(item[primaryKey]) || 0) > (numberValue(best[primaryKey]) || 0) ? item : best
-  }, null)
   const interactions = works.value.map((item) => {
     const values = ['like_count', 'collect_count', 'comment_count', 'share_count']
       .map((key) => numberValue(item[key]))
@@ -316,7 +332,9 @@ const reviewOverview = computed(() => {
     primaryMedian: medianValue(primaryValues),
     primaryMaximum: Math.max(0, ...primaryValues.filter((value) => value !== null)),
     interactionMedian: medianValue(interactions),
-    topWork
+    exposureMedian: medianFor('exposure_count'),
+    playMedian: medianFor('play_count') ?? 0,
+    fiveSecMedian: medianFor('five_sec_completion_rate')
   }
 })
 
@@ -399,7 +417,8 @@ const loadSources = async () => {
   try { const response = await ownContentApi.getReviewSources(); sources.value = response.data || {} } catch (error) { console.warn('读取复盘数据源状态失败', error) }
 }
 const sourceMetricLabels = {
-  play_count: '播放', like_count: '点赞', collect_count: '收藏',
+  exposure_count: '曝光', play_count: '播放', cover_click_rate: '封面点击率',
+  avg_play_duration: '平均播放时长', like_count: '点赞', collect_count: '收藏',
   comment_count: '评论', share_count: '分享', completion_rate: '完播率',
   five_sec_completion_rate: '5秒完播率', two_sec_bounce_rate: '2秒跳出率',
   follower_delta: '涨粉',
@@ -411,16 +430,18 @@ const showMetric = (field) => {
 }
 const formatPercent = (value) => (value === null || value === undefined || value === '' ? '-' : `${(Number(value) * 100).toFixed(1)}%`)
 const detailMetrics = [
+  { key: 'exposure_count', label: '曝光', kind: 'number' },
   { key: 'play_count', label: '播放', kind: 'number' },
-  { key: 'like_count', label: '点赞', kind: 'number' },
-  { key: 'collect_count', label: '收藏', kind: 'number' },
-  { key: 'comment_count', label: '评论', kind: 'number' },
-  { key: 'share_count', label: '分享', kind: 'number' },
-  { key: 'completion_rate', label: '完播率', kind: 'percent' },
-  { key: 'five_sec_completion_rate', label: '5秒完播率', kind: 'percent' },
+  { key: 'cover_click_rate', label: '封面点击率', kind: 'percent' },
   { key: 'two_sec_bounce_rate', label: '2秒跳出率', kind: 'percent' },
+  { key: 'five_sec_completion_rate', label: '5秒完播率', kind: 'percent' },
+  { key: 'completion_rate', label: '完播率', kind: 'percent' },
   { key: 'avg_play_duration', label: '平均播放时长', kind: 'seconds' },
   { key: 'follower_delta', label: '涨粉', kind: 'number' },
+  { key: 'like_count', label: '点赞（辅助）', kind: 'number' },
+  { key: 'collect_count', label: '收藏（辅助）', kind: 'number' },
+  { key: 'comment_count', label: '评论（辅助）', kind: 'number' },
+  { key: 'share_count', label: '分享（辅助）', kind: 'number' },
 ]
 const compareRows = detailMetrics
 const formatMetric = (value, kind = 'number') => {
@@ -471,9 +492,6 @@ onMounted(async () => { await loadSources(); await fetchWorks() })
   .result-alert, .preview-block { margin-top: 16px; }
   .preview-summary { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 12px; margin-bottom: 14px; }
   .fact-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; }
-  .top-work-line { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 14px 16px 0; border-top: 1px solid var(--sau-line); color: var(--sau-ink-soft); font-size: 13px; }
-  .top-work-line .el-link { min-width: 0; max-width: 620px; }
-  .top-work-title { overflow: hidden; max-width: 620px; color: #303133; text-overflow: ellipsis; white-space: nowrap; }
   .card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .card-header-actions { display: flex; align-items: center; gap: 12px; }
   .detail-title { font-size: 20px; font-weight: 650; color: var(--sau-ink); margin-bottom: 8px; }
@@ -512,6 +530,6 @@ onMounted(async () => { await loadSources(); await fetchWorks() })
   .account-stat small { color: #b0b3b8; }
   .trend-bars { display: flex; align-items: flex-end; gap: 2px; height: 34px; }
   .trend-bars i { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; background: var(--sau-cinnabar); opacity: .72; }
-  @media (max-width: 760px) { .page-header, .card-header, .card-header-actions, .official-heading { align-items: flex-start; flex-direction: column; gap: 12px; } .fact-grid, .metric-grid, .official-grid, .account-stats-grid, .private-data-layout, .private-metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } .private-data-section, .portrait-section { grid-column: 1 / -1; } .top-work-line { align-items: flex-start; flex-direction: column; } }
+  @media (max-width: 760px) { .page-header, .card-header, .card-header-actions, .official-heading { align-items: flex-start; flex-direction: column; gap: 12px; } .fact-grid, .metric-grid, .official-grid, .account-stats-grid, .private-data-layout, .private-metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } .private-data-section, .portrait-section { grid-column: 1 / -1; } }
 }
 </style>

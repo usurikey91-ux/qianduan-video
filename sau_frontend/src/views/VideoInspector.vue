@@ -15,7 +15,18 @@
         <el-input v-model="url" clearable placeholder="粘贴抖音或其他平台分享链接" @keyup.enter="inspect" />
         <el-button type="primary" :loading="inspecting" @click="inspect">解析链接</el-button>
       </div>
-      <div class="service-note">服务地址：{{ serviceBaseUrl || '未配置（请通过 VIDEO_JIEXI_BASE_URL 或运行时设置配置）' }}</div>
+      <div class="service-note">{{ embeddedService ? '解析引擎已内置于本工作台，启动 5174 即可使用。' : `服务地址：${serviceBaseUrl || '未配置'}` }}</div>
+    </el-card>
+
+    <el-card shadow="never" class="support-card">
+      <template #header><div class="card-header"><span>支持的平台</span><el-tag size="small" effect="plain">公开链接</el-tag></div></template>
+      <div class="platform-list">
+        <span v-for="platform in supportedPlatforms" :key="platform" class="platform-item">{{ platform }}</span>
+      </div>
+      <div class="directory-row">
+        <div><span class="directory-label">下载目录</span><code>{{ downloadDir || '未读取到目录' }}</code></div>
+        <el-button :disabled="!downloadDir" @click="openFolder">打开下载文件夹</el-button>
+      </div>
     </el-card>
 
     <el-card v-if="info" shadow="never" class="result-card">
@@ -66,6 +77,9 @@ const downloading = ref(false)
 const route = useRoute()
 const serviceAvailable = ref(false)
 const serviceBaseUrl = ref('')
+const downloadDir = ref('')
+const embeddedService = ref(false)
+const supportedPlatforms = ['抖音', 'TikTok', '哔哩哔哩', 'YouTube', '小红书', '快手', '微博', 'X', 'Instagram']
 let pollTimer
 
 const taskStateText = computed(() => ({ queued: '排队中', downloading: '下载中', processing: '处理中', completed: '已完成', error: '失败', cancelled: '已取消' }[task.value?.state] || task.value?.state || '未知'))
@@ -73,7 +87,18 @@ const taskStateText = computed(() => ({ queued: '排队中', downloading: '下�
 async function checkStatus() {
   const response = await videoJiexiApi.status()
   serviceAvailable.value = Boolean(response.data?.health?.ok)
+  embeddedService.value = Boolean(response.data?.embedded)
   serviceBaseUrl.value = response.data?.base_url || ''
+  downloadDir.value = response.data?.download_dir || response.data?.health?.downloadDir || ''
+}
+
+async function openFolder() {
+  try {
+    await videoJiexiApi.openFolder()
+    ElMessage.success('已打开下载文件夹')
+  } catch (error) {
+    ElMessage.error(error?.message || '打开下载文件夹失败')
+  }
 }
 
 async function inspect() {
@@ -142,5 +167,12 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .format-row { display:flex; gap:12px; align-items:center; margin-top:20px; }
 .task-message { margin:12px 0; color:#6b7280; }
 .task-actions { display:flex; align-items:center; gap:10px; }
+.support-card { margin-top: 0; }
+.platform-list { display:flex; flex-wrap:wrap; gap:10px; }
+.platform-item { padding:7px 12px; border:1px solid #e5e7eb; border-radius:999px; background:#fafafa; color:#374151; font-size:13px; }
+.directory-row { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:18px; padding-top:16px; border-top:1px solid #f0f0f0; }
+.directory-row > div { min-width:0; display:grid; gap:6px; }
+.directory-label { color:#6b7280; font-size:12px; }
+.directory-row code { color:#374151; font-size:12px; overflow-wrap:anywhere; }
 @media (max-width: 700px) { .inspect-row,.format-row { flex-direction:column; align-items:stretch; } .result-grid { grid-template-columns:1fr; } }
 </style>

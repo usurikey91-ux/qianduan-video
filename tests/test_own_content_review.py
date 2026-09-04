@@ -1,7 +1,9 @@
 import json
 import gc
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from backend_app.modules.own_content_review import connectors, repository, xiaohongshu_repository
@@ -15,10 +17,12 @@ class OwnContentReviewTests(unittest.TestCase):
                 "title": "测试作品",
                 "source": "browser_detail",
                 "raw_metric_json": json.dumps({
+                    "exposure_count": "1200",
                     "粉丝播放占比": "0.15%",
                     "非粉丝播放占比（按平台粉丝占比反算）": "99.85%",
                     "作品带来的主页访问": "102",
                     "涨粉率": "0.04%",
+                    "流量来源·同城": "3%",
                 }, ensure_ascii=False),
             }
         ])
@@ -29,6 +33,30 @@ class OwnContentReviewTests(unittest.TestCase):
             [item["label"] for item in sections["观众与粉丝"]],
         )
         self.assertEqual("作品带来的主页访问", sections["流量来源"][0]["label"])
+        self.assertEqual(1200, rows[0]["exposure_count"])
+        self.assertNotIn("同城", json.dumps(sections, ensure_ascii=False))
+
+    def test_douyin_exposure_count_survives_existing_database_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "review.sqlite"
+            with closing(sqlite3.connect(db_path)) as conn:
+                conn.execute("CREATE TABLE douyin_own_video_metrics (id INTEGER PRIMARY KEY, video_id INTEGER UNIQUE)")
+                conn.commit()
+            repository.ensure_tables(db_path)
+            with closing(sqlite3.connect(db_path)) as conn:
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(douyin_own_video_metrics)")}
+            self.assertIn("exposure_count", columns)
+
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "review.sqlite"
+            repository.save_import(
+                db_path,
+                [{"title": "自然流量作品", "video_url": "https://douyin/item", "exposure_count": 3200}],
+                "抖音账号",
+                lambda item: item["video_url"],
+            )
+            videos = repository.list_videos(db_path)
+            self.assertEqual(3200, videos[0]["exposure_count"])
 
     def test_douyin_account_snapshot_round_trips(self):
         with tempfile.TemporaryDirectory() as directory:

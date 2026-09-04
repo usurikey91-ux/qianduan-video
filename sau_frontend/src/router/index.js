@@ -1,5 +1,4 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import Dashboard from '../views/Dashboard.vue'
 import About from '../views/About.vue'
 import BenchmarkManagement from '../views/BenchmarkManagement.vue'
 import IdeaRadar from '../views/IdeaRadar.vue'
@@ -16,8 +15,7 @@ const routes = [
   },
   {
     path: '/',
-    name: 'Dashboard',
-    component: Dashboard
+    redirect: '/benchmark-management'
   },
   {
     path: '/material-management',

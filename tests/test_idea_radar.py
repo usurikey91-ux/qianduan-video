@@ -6,6 +6,26 @@ import sau_backend
 
 
 class IdeaRadarPipelineTests(unittest.TestCase):
+    def test_legacy_three_and_five_thresholds_migrate_to_single_five_x_gate(self):
+        rules = sau_backend.normalize_benchmark_monitoring_rules({
+            "reference_work_count": 20,
+            "hot_multiple": 3,
+            "very_hot_multiple": 5,
+            "interval_hours": 4,
+        })
+        self.assertEqual(5.0, rules["hot_multiple"])
+        self.assertEqual(5.5, rules["very_hot_multiple"])
+
+    def test_custom_single_inclusion_threshold_keeps_legacy_connector_compatible(self):
+        rules = sau_backend.normalize_benchmark_monitoring_rules({
+            "reference_work_count": 15,
+            "hot_multiple": 6.5,
+            "interval_hours": 8,
+        }, inherit_global=False)
+        self.assertEqual(6.5, rules["hot_multiple"])
+        self.assertEqual(7.0, rules["very_hot_multiple"])
+        self.assertEqual(15, rules["reference_work_count"])
+
     def test_prompt_uses_full_transcript_and_requires_three_adaptations(self):
         prompt = sau_backend.build_transcript_radar_prompt(
             {

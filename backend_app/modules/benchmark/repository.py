@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 
 def connect(db_path):
@@ -408,13 +409,43 @@ def save_error(db_path, account_id, error_message):
         conn.commit()
 
 
-def list_idea_radar_videos(db_path, parse_metric_number, limit=80):
+def _parse_published_at(value):
+    """Parse common platform timestamp formats into an aware datetime."""
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        parsed = None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def list_idea_radar_videos(db_path, parse_metric_number, limit=80, entry_multiple=5.0, days=0):
     ensure_tables(db_path)
     try:
         limit = max(1, min(int(limit), 200))
     except Exception:
         limit = 80
-    with connect(db_path) as conn:
+    try:
+        days = max(0, int(days))
+    except Exception:
+        days = 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days) if days > 0 else None
+    conn = connect(db_path)
+    try:
         rows = conn.execute(
             """
             SELECT v.*, a.nickname AS account_name
@@ -424,6 +455,8 @@ def list_idea_radar_videos(db_path, parse_metric_number, limit=80):
             ORDER BY v.id DESC
             """
         ).fetchall()
+    finally:
+        conn.close()
 
     videos = []
     for row in rows:
@@ -434,23 +467,30 @@ def list_idea_radar_videos(db_path, parse_metric_number, limit=80):
             raw_data = {}
         monitor_work = raw_data.get("monitor_work") if isinstance(raw_data, dict) else {}
         monitor_work = monitor_work if isinstance(monitor_work, dict) else {}
+        if cutoff is not None:
+            published_at = _parse_published_at(
+                monitor_work.get("published_at")
+                or raw_data.get("published_at")
+                or item.get("published_at")
+            )
+            # 开启时效筛选时，缺少可解析发布时间的旧数据不应混入结果。
+            if published_at is None or published_at < cutoff:
+                continue
         relative_multiple = monitor_work.get("relative_multiple") or raw_data.get("relative_multiple")
         try:
             relative_multiple = float(relative_multiple)
         except (TypeError, ValueError):
             relative_multiple = None
-        # 统一使用当前标准重新判定，避免历史记录里旧的 hot_status 继续污染列表：
-        # 3 倍进入“火”，5 倍进入“特别火”。
-        if relative_multiple is None or relative_multiple < 3.0:
+        # 统一使用当前单一入选门槛重新判定，避免历史的“火/特别火”
+        # 状态继续污染列表。
+        if relative_multiple is None or relative_multiple < float(entry_multiple):
             continue
-        hot_status = "very_hot" if relative_multiple >= 5.0 else "hot"
-        item["hot_status"] = hot_status
+        item["hot_status"] = "selected"
         item["relative_multiple"] = relative_multiple
         item["monitor_metrics"] = monitor_work.get("latest_public_metrics") or raw_data.get("metrics") or {}
         item["like_score"] = parse_metric_number(item.get("like_count"))
         videos.append(item)
     videos.sort(key=lambda item: (
-        item.get("hot_status") == "very_hot",
         float(item.get("relative_multiple") or 0),
         item["like_score"],
         item.get("id") or 0,

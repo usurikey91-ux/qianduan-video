@@ -175,13 +175,48 @@ class OpenCLIAdminServiceTests(unittest.TestCase):
         self.assertEqual({"created": True}, result)
 
     @patch("backend_app.modules.opencli_monitor.service._request")
-    def test_queue_combines_hot_and_very_hot_with_priority_first(self, request):
+    def test_queue_normalizes_legacy_heat_levels_to_one_selected_state(self, request):
         request.side_effect = [
-            [{"external_work_id": "hot", "relative_multiple": 4, "priority": False}],
-            [{"external_work_id": "very-hot", "relative_multiple": 5, "priority": True}],
+            [{
+                "external_work_id": "hot",
+                "relative_multiple": 6,
+                "priority": False,
+                "evidence": {"hot_multiple": 5, "very_hot_multiple": 5.5},
+            }],
+            [{
+                "external_work_id": "very-hot",
+                "relative_multiple": 22,
+                "priority": True,
+                "evidence": {"hot_multiple": 5, "very_hot_multiple": 5.5},
+            }],
+            [{
+                "id": "account-1",
+                "monitoring_rules": {"hot_multiple": 5, "very_hot_multiple": 5.5},
+            }],
         ]
         queue = service.list_analysis_queue()
         self.assertEqual(["very-hot", "hot"], [item["external_work_id"] for item in queue])
+        self.assertTrue(all(item["status"] == "selected" for item in queue))
+        self.assertTrue(all(item["priority"] is False for item in queue))
+        self.assertTrue(all(item["evidence"]["entry_multiple"] == 5 for item in queue))
+        self.assertTrue(all("very_hot_multiple" not in item["evidence"] for item in queue))
+
+    @patch("backend_app.modules.opencli_monitor.service._request")
+    def test_queue_filters_stale_work_below_current_account_threshold(self, request):
+        account = {"id": "account-1"}
+        request.side_effect = [
+            [
+                {"external_work_id": "stale", "relative_multiple": 3.2, "account": account},
+                {"external_work_id": "selected", "relative_multiple": 5.1, "account": account},
+            ],
+            [],
+            [{
+                "id": "account-1",
+                "monitoring_rules": {"hot_multiple": 5, "very_hot_multiple": 5.5},
+            }],
+        ]
+        queue = service.list_analysis_queue()
+        self.assertEqual(["selected"], [item["external_work_id"] for item in queue])
 
 
 if __name__ == "__main__":

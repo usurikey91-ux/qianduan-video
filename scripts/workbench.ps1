@@ -143,8 +143,7 @@ function Show-Status {
     @{ name = 'frontend'; port = 5174 },
     @{ name = 'backend'; port = 5409 },
     @{ name = 'opencli-admin'; port = 8031 },
-    @{ name = 'collector-browser'; port = 9222 },
-    @{ name = 'video-jiexi'; port = 4200 }
+    @{ name = 'collector-browser'; port = 9222 }
   )
   foreach ($item in $ports) {
     $owner = Get-PortOwner $item.port
@@ -171,7 +170,6 @@ if ($config.opencliPath -and -not $env:OPENCLI_BIN) {
   $env:OPENCLI_BIN = [IO.Path]::GetFullPath([string]$config.opencliPath)
 }
 $opencliRoot = Resolve-ServiceRoot $config.opencliAdminProjectDir 'OPENCLI_ADMIN_PROJECT_DIR' @('opencli-admin', '自媒体内容拆解') 'backend\main.py'
-$videoRoot = Resolve-ServiceRoot $config.videoJiexiProjectDir 'VIDEO_JIEXI_PROJECT_DIR' @('video-jiexi') 'server.js'
 $backendPython = @(
   (Join-Path $ProjectRoot '.venv311\Scripts\python.exe'),
   (Join-Path $ProjectRoot '.venv\Scripts\python.exe')
@@ -182,8 +180,8 @@ if (-not $env:YTDLP_PATH) {
   $configuredYtDlp = if ($config.ytDlpPath) { [IO.Path]::GetFullPath([string]$config.ytDlpPath) } else { Join-Path (Split-Path -Parent $backendPython) 'yt-dlp.exe' }
   if (Test-Path -LiteralPath $configuredYtDlp) { $env:YTDLP_PATH = $configuredYtDlp }
 }
-if ($config.videoJiexiDownloadDir -and -not $env:DOWNLOAD_DIR) {
-  $env:DOWNLOAD_DIR = [IO.Path]::GetFullPath([string]$config.videoJiexiDownloadDir)
+if ($config.videoJiexiDownloadDir -and -not $env:VIDEO_JIEXI_DOWNLOAD_DIR) {
+  $env:VIDEO_JIEXI_DOWNLOAD_DIR = [IO.Path]::GetFullPath([string]$config.videoJiexiDownloadDir)
 }
 
 $services = @()
@@ -196,9 +194,6 @@ try {
     } else { Join-Path $RuntimeDir 'login-profiles\opencli-monitor' }
     $services += Start-CollectorBrowser $chromePath $collectorProfile
   }
-  if ($videoRoot) {
-    $services += Start-ServiceProcess 'video-jiexi' 4200 'cmd.exe' @('/d', '/c', 'npm.cmd', 'start') $videoRoot
-  } else { Write-Host '[optional] video-jiexi project not found; video parsing will show a clear unavailable state.' }
   if ($opencliRoot) {
     $opencliPython = @(
       (Join-Path $opencliRoot '.venv311\Scripts\python.exe'),
@@ -209,7 +204,7 @@ try {
     } else { Write-Host '[optional] OpenCLI Admin Python environment is missing; monitoring will be unavailable.' }
   } else { Write-Host '[optional] OpenCLI Admin project not found; monitoring will be unavailable.' }
   if ($opencliRoot -and -not $env:OPENCLI_ADMIN_BASE_URL) { $env:OPENCLI_ADMIN_BASE_URL = 'http://127.0.0.1:8031/api/v1' }
-  if ($videoRoot -and -not $env:VIDEO_JIEXI_BASE_URL) { $env:VIDEO_JIEXI_BASE_URL = 'http://127.0.0.1:4200' }
+  Write-Host '[embedded] video-jiexi parser is managed inside the 5409 backend and is not exposed as a second port.'
   $services += Start-ServiceProcess 'backend' 5409 $backendPython @('sau_backend.py') $ProjectRoot
   $services += Start-ServiceProcess 'frontend' 5174 'cmd.exe' @('/d', '/c', 'npm.cmd', 'run', 'dev', '--', '--host', '127.0.0.1') (Join-Path $ProjectRoot 'sau_frontend')
 } catch {

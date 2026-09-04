@@ -9,17 +9,6 @@
       <el-button :icon="Refresh" :loading="refreshing" @click="refresh(true)">重新检测</el-button>
     </header>
 
-    <el-alert
-      title="每台电脑都是一套独立工作台"
-      type="success"
-      :closable="false"
-      show-icon
-    >
-      <template #default>
-        从 GitHub 安装后，每个人只连接自己的账号。登录态、作品数据和设置均保存在当前电脑，不经过项目作者的服务器。
-      </template>
-    </el-alert>
-
     <div class="steps" aria-label="首次使用步骤">
       <div><strong>1</strong><span>检测本机连接器</span></div>
       <div><strong>2</strong><span>打开官方页面扫码</span></div>

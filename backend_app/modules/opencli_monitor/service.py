@@ -350,10 +350,59 @@ def list_analysis_queue(
         )
         if isinstance(result, list):
             works.extend(item for item in result if isinstance(item, dict))
+
+    default_rules = (settings or {}).get("benchmarkMonitoringDefaults") or {}
+    try:
+        default_entry_multiple = float(default_rules.get("hot_multiple") or 5.0)
+    except (TypeError, ValueError):
+        default_entry_multiple = 5.0
+    account_thresholds: dict[str, float] = {}
+    for account in list_accounts(platform, settings):
+        rules = account.get("monitoring_rules") or {}
+        try:
+            hot_multiple = float(rules.get("hot_multiple") or default_entry_multiple)
+            very_hot_multiple = float(rules.get("very_hot_multiple") or 0)
+            # Former untouched defaults meant 3x hot / 5x very hot. Under the
+            # single-gate rule those accounts migrate to a 5x entry threshold.
+            if hot_multiple == 3.0 and very_hot_multiple == 5.0:
+                hot_multiple = 5.0
+            account_thresholds[str(account.get("id") or "")] = hot_multiple
+        except (TypeError, ValueError):
+            continue
+
+    selected = []
+    for item in works:
+        normalized = dict(item)
+        raw_evidence = normalized.get("evidence")
+        evidence = dict(raw_evidence) if isinstance(raw_evidence, dict) else {}
+        account = normalized.get("account") if isinstance(normalized.get("account"), dict) else {}
+        entry_multiple = account_thresholds.get(
+            str(account.get("id") or ""), default_entry_multiple
+        )
+        try:
+            relative_multiple = float(normalized.get("relative_multiple") or 0)
+        except (TypeError, ValueError):
+            continue
+        if relative_multiple < entry_multiple:
+            continue
+        evidence["entry_multiple"] = entry_multiple
+        evidence.pop("hot_multiple", None)
+        evidence.pop("very_hot_multiple", None)
+        evidence.pop("priority_analysis", None)
+        evidence["status"] = "selected"
+        reasons = [
+            reason for reason in (evidence.get("reasons") or [])
+            if "特别火" not in str(reason) and "火=" not in str(reason)
+        ]
+        reasons.append(
+            f"相对倍数={relative_multiple:.2f}，入选门槛={entry_multiple:g}倍"
+        )
+        evidence["reasons"] = reasons
+        normalized["evidence"] = evidence
+        normalized["status"] = "selected"
+        normalized["priority"] = False
+        selected.append(normalized)
     return sorted(
-        works,
-        key=lambda item: (
-            not bool(item.get("priority")),
-            -float(item.get("relative_multiple") or 0),
-        ),
+        selected,
+        key=lambda item: -float(item.get("relative_multiple") or 0),
     )

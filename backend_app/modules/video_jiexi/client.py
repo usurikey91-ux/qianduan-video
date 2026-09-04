@@ -5,8 +5,14 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from .embedded import manager as embedded_manager
+
 
 DEFAULT_BASE_URL = ""
+
+
+def _configured_base_url(settings):
+    return (os.environ.get("VIDEO_JIEXI_BASE_URL") or settings.get("videoJiexiBaseUrl") or DEFAULT_BASE_URL).rstrip("/")
 
 
 class VideoJiexiError(RuntimeError):
@@ -15,7 +21,17 @@ class VideoJiexiError(RuntimeError):
 
 def base_url(settings=None):
     settings = settings or {}
-    return (os.environ.get("VIDEO_JIEXI_BASE_URL") or settings.get("videoJiexiBaseUrl") or DEFAULT_BASE_URL).rstrip("/")
+    configured = _configured_base_url(settings)
+    # 4200 was the development-only standalone service.  Treat it as a
+    # legacy value and transparently replace it with the bundled loopback
+    # instance so a clone only needs the 5174 workbench process.
+    if not configured or configured.rstrip("/") in {"http://127.0.0.1:4200", "http://localhost:4200"}:
+        download_dir = download_root(settings)
+        try:
+            return embedded_manager.ensure(download_dir)
+        except Exception:
+            return configured
+    return configured
 
 
 def download_root(settings=None):

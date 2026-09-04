@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1>对标内容库</h1>
-        <p>账号添加一次后自动巡检，只判断作品是否达到账号自身热度阈值。</p>
+        <p>账号添加一次后自动巡检，只判断作品是否达到进入对标作品试水栏目的倍数门槛。</p>
         <ProjectReferences context="benchmark" />
       </div>
       <el-button :loading="monitorLoading" @click="refreshMonitor">刷新</el-button>
@@ -25,12 +25,8 @@
           <el-slider v-model="globalRules.reference_work_count" :min="5" :max="50" :step="1" show-input />
         </div>
         <div class="rule-field">
-          <span>火</span>
+          <span>入选倍数</span>
           <el-slider v-model="globalRules.hot_multiple" :min="1.5" :max="10" :step="0.5" show-input />
-        </div>
-        <div class="rule-field">
-          <span>特别火</span>
-          <el-slider v-model="globalRules.very_hot_multiple" :min="2" :max="20" :step="0.5" show-input />
         </div>
         <label class="rule-field compact-rule">
           <span>巡检频率</span>
@@ -129,10 +125,10 @@
       <template #header>
         <div class="card-header">
           <div>
-            <div class="card-title">爆款作品</div>
-            <div class="card-subtitle">只看公开数据是否相对账号自身基线显著更高；不自动进行内容拆解。</div>
+            <div class="card-title">对标作品试水</div>
+            <div class="card-subtitle">只有达到设定倍数门槛的作品才进入；低于门槛不展示，也不再区分“火”和“特别火”。</div>
           </div>
-          <el-tag type="danger" effect="plain">特别火</el-tag>
+          <el-tag type="danger" effect="plain">入选 ≥ {{ globalRules.hot_multiple }}x</el-tag>
         </div>
       </template>
 
@@ -144,9 +140,9 @@
             <div class="monitor-account-id">{{ scope.row.account?.display_name || scope.row.account?.external_account_id }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="热度" width="110">
+        <el-table-column label="入选状态" width="110">
           <template #default="scope">
-            <el-tag :type="scope.row.priority ? 'danger' : 'warning'">{{ scope.row.priority ? '特别火' : '火' }}</el-tag>
+            <el-tag type="danger" effect="plain">已入选</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="相对倍数" width="110">
@@ -165,7 +161,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else-if="!monitorLoading" description="暂无达到账号自身热度阈值的作品" :image-size="70" />
+      <el-empty v-else-if="!monitorLoading" description="暂无达到入选倍数门槛的作品" :image-size="70" />
     </el-card>
 
     <el-dialog v-model="accountRulesVisible" title="账号监控规则" width="560px">
@@ -181,11 +177,8 @@
         <el-form-item label="参考作品数">
           <el-slider v-model="accountRules.reference_work_count" :min="5" :max="50" :step="1" show-input :disabled="accountRules.inherit_global" />
         </el-form-item>
-        <el-form-item label="火倍数">
+        <el-form-item label="入选倍数">
           <el-slider v-model="accountRules.hot_multiple" :min="1.5" :max="10" :step="0.5" show-input :disabled="accountRules.inherit_global" />
-        </el-form-item>
-        <el-form-item label="特别火倍数">
-          <el-slider v-model="accountRules.very_hot_multiple" :min="2" :max="20" :step="0.5" show-input :disabled="accountRules.inherit_global" />
         </el-form-item>
         <el-form-item label="巡检频率">
           <el-select v-model="accountRules.interval_hours" :disabled="accountRules.inherit_global" style="width: 100%">
@@ -193,7 +186,7 @@
           </el-select>
         </el-form-item>
       </el-form>
-      <el-alert title="少于 5 条历史作品时不判火；达到 5 条后会按实际样本计算，并显示 X/目标条数。当前作品不会进入自己的中位数。" type="info" :closable="false" />
+      <el-alert title="少于 5 条历史作品时不做入选判断；达到 5 条后按实际样本计算，并显示 X/目标条数。当前作品不会进入自己的中位数。" type="info" :closable="false" />
       <template #footer>
         <el-button @click="accountRulesVisible = false">取消</el-button>
         <el-button type="primary" :loading="savingAccountRules" @click="saveAccountRules">保存并重算</el-button>
@@ -231,7 +224,7 @@ const editingAccountName = ref('')
 const accountNameInput = ref(null)
 const savingAccountName = ref(false)
 const intervalOptions = [1, 2, 4, 8, 12, 24]
-const globalRules = ref({ reference_work_count: 20, hot_multiple: 3, very_hot_multiple: 5, interval_hours: 4, inherit_global: true })
+const globalRules = ref({ reference_work_count: 20, hot_multiple: 5, very_hot_multiple: 5.5, interval_hours: 4, inherit_global: true })
 const savingGlobalRules = ref(false)
 const accountRulesVisible = ref(false)
 const accountRulesId = ref(null)
@@ -275,12 +268,12 @@ const formatPublicMetrics = (metrics) => {
 const ruleSummary = (rules = {}) => {
   const value = { ...globalRules.value, ...(rules || {}) }
   const interval = value.interval_hours === 24 ? '每天' : `每${value.interval_hours}小时`
-  return `近${value.reference_work_count}条 · 火${value.hot_multiple}x · 特别火${value.very_hot_multiple}x · ${interval}${value.inherit_global === false ? ' · 单独设置' : ''}`
+  return `近${value.reference_work_count}条 · 入选≥${value.hot_multiple}x · ${interval}${value.inherit_global === false ? ' · 单独设置' : ''}`
 }
 
 const validateRules = (rules) => {
-  if (Number(rules.very_hot_multiple) <= Number(rules.hot_multiple)) {
-    ElMessage.warning('“特别火”倍数必须大于“火”倍数')
+  if (Number(rules.hot_multiple) < 1.5 || Number(rules.hot_multiple) > 10) {
+    ElMessage.warning('入选倍数必须在 1.5 到 10 之间')
     return false
   }
   return true

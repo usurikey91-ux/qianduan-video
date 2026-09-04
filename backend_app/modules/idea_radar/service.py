@@ -26,6 +26,7 @@ def start_pipeline_task(
     pipeline_fn,
     force=False,
     force_transcription=False,
+    transcribe_only=False,
 ):
     if (
         current and current.get("status") == "success" and not force
@@ -48,7 +49,7 @@ def start_pipeline_task(
     )
     thread = threading.Thread(
         target=pipeline_fn,
-        args=(video_id, target_direction, force_transcription),
+        args=(video_id, target_direction, force_transcription, transcribe_only),
         daemon=True,
         name=f"idea-radar-{video_id}",
     )
