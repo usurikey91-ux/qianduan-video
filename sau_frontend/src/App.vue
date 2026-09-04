@@ -183,7 +183,7 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
   place-items: center;
   flex: 0 0 auto;
   background: var(--sau-accent);
-  color: #ffffff;
+  color: var(--sau-accent-contrast);
   font-weight: 800;
 }
 
@@ -292,7 +292,7 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
 
   button.active {
     background: #f3f6f2;
-    color: #26352d;
+    color: #171717;
     box-shadow: 0 2px 8px rgba(8, 20, 13, 0.22);
   }
 }

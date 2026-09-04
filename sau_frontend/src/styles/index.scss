@@ -18,74 +18,78 @@ body {
   min-height: 100vh;
 }
 
-// Natural workbench palette: cool mist, forest green and restrained clay.
+// Monochrome workbench palette with neutral contrast for long editing sessions.
 :root {
   color-scheme: light;
-  --el-color-primary: #4f725e;
-  --el-color-primary-light-3: #789582;
-  --el-color-primary-light-5: #9fb3a5;
-  --el-color-primary-light-7: #c6d2ca;
-  --el-color-primary-light-8: #dce4de;
-  --el-color-primary-light-9: #edf2ee;
-  --el-color-primary-dark-2: #3d5949;
-  --sau-ink: #24312a;
-  --sau-ink-soft: #59675f;
-  --sau-muted: #7a877f;
+  --el-color-primary: #171717;
+  --el-color-primary-light-3: #525252;
+  --el-color-primary-light-5: #737373;
+  --el-color-primary-light-7: #b5b5b5;
+  --el-color-primary-light-8: #d4d4d4;
+  --el-color-primary-light-9: #eeeeee;
+  --el-color-primary-dark-2: #000000;
+  --sau-ink: #171717;
+  --sau-ink-soft: #525252;
+  --sau-muted: #7a7a7a;
   --sau-paper: #ffffff;
-  --sau-paper-muted: #f3f6f3;
-  --sau-soft: #e9efea;
-  --sau-page: #eef2ef;
-  --sau-line: #d8dfda;
-  --sau-accent: #4f725e;
-  --sau-accent-hover: #3f604d;
-  --sau-accent-soft: #e5eee8;
-  --sau-warm: #a7654e;
-  --sau-warm-soft: #f4e9e4;
-  --sau-sidebar: #26352d;
+  --sau-paper-muted: #f5f5f4;
+  --sau-soft: #eeeeec;
+  --sau-page: #f2f2f0;
+  --sau-line: #dededb;
+  --sau-accent: #171717;
+  --sau-accent-hover: #000000;
+  --sau-accent-contrast: #ffffff;
+  --sau-focus-ring: rgba(23, 23, 23, 0.14);
+  --sau-accent-soft: #ededeb;
+  --sau-warm: #555555;
+  --sau-warm-soft: #eeeeec;
+  --sau-sidebar: #151515;
   --sau-topbar: rgba(255, 255, 255, 0.9);
   --sau-cinnabar: var(--sau-warm);
   --sau-cinnabar-soft: var(--sau-warm-soft);
-  --sau-brass: #7b7652;
+  --sau-brass: #686868;
   --sau-display-font: inherit;
 }
 
 :root.dark {
   color-scheme: dark;
-  --el-color-primary: #82a98f;
-  --el-color-primary-light-3: #6f927b;
-  --el-color-primary-light-5: #587363;
-  --el-color-primary-light-7: #405247;
-  --el-color-primary-light-8: #344239;
-  --el-color-primary-light-9: #29352e;
-  --el-color-primary-dark-2: #9bc0a6;
-  --el-bg-color: #1d2420;
-  --el-bg-color-overlay: #252e29;
-  --el-fill-color-blank: #1d2420;
-  --el-fill-color-light: #28312c;
-  --el-fill-color-lighter: #303a34;
-  --el-border-color: #3b4740;
-  --el-border-color-light: #354139;
-  --el-text-color-primary: #edf2ee;
-  --el-text-color-regular: #c8d1cb;
-  --el-text-color-secondary: #9eaaa2;
-  --sau-ink: #edf2ee;
-  --sau-ink-soft: #b1beb6;
-  --sau-muted: #89978e;
-  --sau-paper: #1d2420;
-  --sau-paper-muted: #252d28;
-  --sau-soft: #2b3530;
-  --sau-page: #171d1a;
-  --sau-line: #354139;
-  --sau-accent: #82a98f;
-  --sau-accent-hover: #94b9a0;
-  --sau-accent-soft: #293b31;
-  --sau-warm: #d18a6f;
-  --sau-warm-soft: #432f28;
-  --sau-sidebar: #101713;
-  --sau-topbar: rgba(29, 36, 32, 0.92);
+  --el-color-primary: #f5f5f4;
+  --el-color-primary-light-3: #d4d4d4;
+  --el-color-primary-light-5: #a3a3a3;
+  --el-color-primary-light-7: #666666;
+  --el-color-primary-light-8: #484848;
+  --el-color-primary-light-9: #2d2d2d;
+  --el-color-primary-dark-2: #ffffff;
+  --el-bg-color: #181818;
+  --el-bg-color-overlay: #222222;
+  --el-fill-color-blank: #181818;
+  --el-fill-color-light: #242424;
+  --el-fill-color-lighter: #2c2c2c;
+  --el-border-color: #3d3d3d;
+  --el-border-color-light: #343434;
+  --el-text-color-primary: #f5f5f4;
+  --el-text-color-regular: #d1d1d1;
+  --el-text-color-secondary: #a3a3a3;
+  --sau-ink: #f5f5f4;
+  --sau-ink-soft: #c2c2c2;
+  --sau-muted: #929292;
+  --sau-paper: #181818;
+  --sau-paper-muted: #222222;
+  --sau-soft: #292929;
+  --sau-page: #101010;
+  --sau-line: #353535;
+  --sau-accent: #f5f5f4;
+  --sau-accent-hover: #ffffff;
+  --sau-accent-contrast: #171717;
+  --sau-focus-ring: rgba(245, 245, 244, 0.16);
+  --sau-accent-soft: #303030;
+  --sau-warm: #d1d1d1;
+  --sau-warm-soft: #2a2a2a;
+  --sau-sidebar: #090909;
+  --sau-topbar: rgba(24, 24, 24, 0.94);
   --sau-cinnabar: var(--sau-warm);
   --sau-cinnabar-soft: var(--sau-warm-soft);
-  --sau-brass: #b3ad7b;
+  --sau-brass: #b8b8b8;
 }
 
 .el-card {
@@ -107,7 +111,8 @@ body {
 .el-button--primary {
   border-color: var(--sau-accent) !important;
   background: var(--sau-accent) !important;
-  box-shadow: 0 6px 14px rgba(53, 91, 68, 0.18);
+  color: var(--sau-accent-contrast) !important;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.16);
 }
 
 .el-button--primary:hover,
@@ -131,7 +136,7 @@ body {
 .el-input__wrapper.is-focus,
 .el-select__wrapper.is-focused,
 .el-textarea__inner:focus {
-  box-shadow: 0 0 0 1px var(--sau-accent) inset, 0 0 0 3px rgba(79, 114, 94, 0.12) !important;
+  box-shadow: 0 0 0 1px var(--sau-accent) inset, 0 0 0 3px var(--sau-focus-ring) !important;
 }
 
 .el-tag--info {
