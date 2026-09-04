@@ -357,7 +357,14 @@ def list_analysis_queue(
     except (TypeError, ValueError):
         default_entry_multiple = 5.0
     account_thresholds: dict[str, float] = {}
+    enabled_account_ids: set[str] = set()
     for account in list_accounts(platform, settings):
+        account_id = str(account.get("id") or "")
+        # The radar represents the user's active benchmark set. Keep legacy
+        # responses without this field compatible, but exclude explicitly
+        # disabled/unconfigured accounts from selection.
+        if account.get("collection_enabled") is not False:
+            enabled_account_ids.add(account_id)
         rules = account.get("monitoring_rules") or {}
         try:
             hot_multiple = float(rules.get("hot_multiple") or default_entry_multiple)
@@ -376,8 +383,11 @@ def list_analysis_queue(
         raw_evidence = normalized.get("evidence")
         evidence = dict(raw_evidence) if isinstance(raw_evidence, dict) else {}
         account = normalized.get("account") if isinstance(normalized.get("account"), dict) else {}
+        account_id = str(account.get("id") or "")
+        if account_id and account_id not in enabled_account_ids:
+            continue
         entry_multiple = account_thresholds.get(
-            str(account.get("id") or ""), default_entry_multiple
+            account_id, default_entry_multiple
         )
         try:
             relative_multiple = float(normalized.get("relative_multiple") or 0)

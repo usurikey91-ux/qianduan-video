@@ -218,6 +218,16 @@ class OpenCLIAdminServiceTests(unittest.TestCase):
         queue = service.list_analysis_queue()
         self.assertEqual(["selected"], [item["external_work_id"] for item in queue])
 
+    @patch("backend_app.modules.opencli_monitor.service._request")
+    def test_queue_excludes_works_from_disabled_accounts(self, request):
+        disabled = {"id": "disabled-account", "collection_enabled": False}
+        request.side_effect = [
+            [{"external_work_id": "public-account-work", "relative_multiple": 9, "account": {"id": "disabled-account"}}],
+            [],
+            [disabled],
+        ]
+        self.assertEqual([], service.list_analysis_queue())
+
 
 if __name__ == "__main__":
     unittest.main()
