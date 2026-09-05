@@ -188,6 +188,42 @@ pwsh -File .\scripts\workbench.ps1 stop
 
 启动器会检查主后端、前端和已配置的可选服务，并把本轮进程信息保存在本地 `.runtime` 目录。
 
+### 给别人使用的最短流程
+
+下面按全新 Windows 电脑编写。工作台默认只在本机运行，登录态、Cookie、数据库和 API 配置都保存在使用者自己的电脑上。
+
+1. 安装 `Python 3.11+`、`Node.js 18+`、`PowerShell 7` 和 `Google Chrome/Chromium`。
+2. 打开 PowerShell，执行：
+
+   ```powershell
+   git clone https://github.com/usurikey91-ux/qianduan-video.git
+   cd qianduan-video
+   pwsh -File .\scripts\setup-local.ps1
+   ```
+
+3. 启动工作台：
+
+   ```powershell
+   pwsh -File .\scripts\workbench.ps1 start -OpenBrowser
+   ```
+
+4. 浏览器打开 `http://127.0.0.1:5174` 后，先进入“账号连接”扫码登录自己的账号；再进入“对标内容库”添加要观察的账号；最后在“入选作品列表”查看采集结果和解析任务。
+5. 查看服务状态：
+
+   ```powershell
+   pwsh -File .\scripts\check-workbench.ps1
+   ```
+
+6. 停止工作台：
+
+   ```powershell
+   pwsh -File .\scripts\workbench.ps1 stop
+   ```
+
+首次启动较慢属于正常现象，安装器会准备 Python 环境、前端依赖、内置视频解析和可选平台连接器。以后使用只需要执行第 3 步。
+
+常见问题：页面打不开时运行 `check-workbench.ps1`；账号采集失败时在“账号连接”重新检测并扫码；视频解析失败时粘贴完整公开分享文本；缺少可选连接器不会阻止核心页面启动，只会影响对应平台能力。
+
 ### 首次连接自己的平台账号
 
 工作台启动后，在左侧进入“账号连接”：
