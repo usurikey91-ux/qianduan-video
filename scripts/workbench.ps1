@@ -77,9 +77,19 @@ function Start-CollectorBrowser([string]$BrowserPath, [string]$ProfileDirectory)
   return @{ name = 'collector-browser'; port = 9222; ownerPid = $owner; launcherPid = $process.Id; managed = $true }
 }
 
-function Start-ServiceProcess([string]$Name, [int]$Port, [string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory) {
+function Test-ExpectedProcess([int]$ProcessId, [string]$ExpectedMarker) {
+  if (-not $ExpectedMarker) { return $true }
+  $process = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+  if (-not $process) { return $false }
+  return ([string]$process.CommandLine) -like "*$ExpectedMarker*"
+}
+
+function Start-ServiceProcess([string]$Name, [int]$Port, [string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory, [string]$ExpectedMarker) {
   $existingOwner = Get-PortOwner $Port
   if ($existingOwner) {
+    if (-not (Test-ExpectedProcess $existingOwner $ExpectedMarker)) {
+      throw ("{0} 端口 {1} 已被其他项目占用（PID {2}）。请先停止占用该端口的程序后再启动工作台。" -f $Name, $Port, $existingOwner)
+    }
     Write-Host ("[ready] {0} already listens on {1} (PID {2})" -f $Name, $Port, $existingOwner)
     $previousRecord = @(Read-State) | Where-Object {
       $_.name -eq $Name -and
@@ -200,13 +210,13 @@ try {
       (Join-Path $opencliRoot '.venv\Scripts\python.exe')
     ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if ($opencliPython) {
-      $services += Start-ServiceProcess 'opencli-admin' 8031 $opencliPython @('-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', '8031') $opencliRoot
+      $services += Start-ServiceProcess 'opencli-admin' 8031 $opencliPython @('-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', '8031') $opencliRoot 'backend.main:app'
     } else { Write-Host '[optional] OpenCLI Admin Python environment is missing; monitoring will be unavailable.' }
   } else { Write-Host '[optional] OpenCLI Admin project not found; monitoring will be unavailable.' }
   if ($opencliRoot -and -not $env:OPENCLI_ADMIN_BASE_URL) { $env:OPENCLI_ADMIN_BASE_URL = 'http://127.0.0.1:8031/api/v1' }
   Write-Host '[embedded] video-jiexi parser is managed inside the 5409 backend and is not exposed as a second port.'
-  $services += Start-ServiceProcess 'backend' 5409 $backendPython @('sau_backend.py') $ProjectRoot
-  $services += Start-ServiceProcess 'frontend' 5174 'cmd.exe' @('/d', '/c', 'npm.cmd', 'run', 'dev', '--', '--host', '127.0.0.1') (Join-Path $ProjectRoot 'sau_frontend')
+  $services += Start-ServiceProcess 'backend' 5409 $backendPython @('sau_backend.py') $ProjectRoot 'sau_backend.py'
+  $services += Start-ServiceProcess 'frontend' 5174 'cmd.exe' @('/d', '/c', 'npm.cmd', 'run', 'dev', '--', '--host', '127.0.0.1') (Join-Path $ProjectRoot 'sau_frontend') 'sau_frontend'
 } catch {
   Stop-ServiceRecords $services
   throw
