@@ -19,6 +19,7 @@ import traceback
 import uuid
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -98,8 +99,16 @@ for stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-#允许所有来源跨域访问
-CORS(app)
+# Keep the local UI working while preventing arbitrary websites from calling the API.
+ALLOWED_ORIGINS = [
+    item.strip()
+    for item in os.environ.get(
+        "SAU_ALLOWED_ORIGINS",
+        "http://127.0.0.1:5174,http://localhost:5174",
+    ).split(",")
+    if item.strip()
+]
+CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
 
 # 限制上传文件大小为160MB
 app.config['MAX_CONTENT_LENGTH'] = 160 * 1024 * 1024
@@ -1522,6 +1531,10 @@ def transcribe_idea_radar_media(media_path, progress_callback=None):
 
 def download_idea_radar_media(video_url, work_dir, progress_callback=None):
     """Use the reusable video-jiexi adapter first, then keep the local fallback."""
+    if not normalize_manual_video_url(video_url):
+        raise ValueError(
+            "作品链接无效，请重新粘贴包含 https://v.douyin.com/... 的完整分享文本"
+        )
     settings = load_runtime_settings()
     if video_jiexi_client.base_url(settings):
         try:
@@ -1537,7 +1550,12 @@ def download_idea_radar_media(video_url, work_dir, progress_callback=None):
             task_id = task.get("id") if isinstance(task, dict) else None
             if not task_id:
                 raise RuntimeError("视频解析服务未返回下载任务 ID")
+            deadline = time.monotonic() + max(
+                30, int(os.environ.get("VIDEO_JIEXI_TASK_TIMEOUT_SECONDS", "900"))
+            )
             while True:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("视频解析服务等待超时")
                 current = video_jiexi_client.get_task(task_id, settings)
                 state = str(current.get("state") or "")
                 percent = float(current.get("progress") or 0)
@@ -1559,11 +1577,7 @@ def download_idea_radar_media(video_url, work_dir, progress_callback=None):
             if progress_callback:
                 progress_callback(5, "视频解析服务暂不可用，切换备用下载方式")
     return download_douyin_video(
-        video_url, work_dir,
-        base_dir=BASE_DIR,
-        latest_cookie_file=latest_douyin_cookie_file,
-        progress_callback=progress_callback,
-        log=backend_log,
+        video_url, work_dir, progress_callback=progress_callback
     )
 
 
@@ -1584,13 +1598,14 @@ def parse_metric_number(value):
     return int(number)
 
 
-def list_idea_radar_videos(limit=80, days=0):
+def list_idea_radar_videos(limit=80, days=0, include_deleted=False):
     sync_result = sync_hot_monitor_works()
     active_monitor_urls = None if sync_result.get("error") else set(sync_result["active_urls"])
     rules = get_benchmark_monitoring_defaults()
     return benchmark_repository.list_idea_radar_videos(
         get_db_path(), parse_metric_number, limit, rules["hot_multiple"], days,
         active_monitor_urls,
+        include_deleted,
     )
 
 
@@ -1962,7 +1977,7 @@ def upload_file():
         generated = material_service.save_temp_upload(file, BASE_DIR)
         return jsonify({"code":200,"msg": "File uploaded successfully", "data": generated}), 200
     except Exception as e:
-        return jsonify({"code":200,"msg": str(e),"data":None}), 500
+        return jsonify({"code":500,"msg": str(e),"data":None}), 500
 
 @app.route('/getFile', methods=['GET'])
 def get_file():
@@ -2717,28 +2732,42 @@ def get_idea_radar_videos():
     try:
         limit = request.args.get("limit", 80)
         days = request.args.get("days", 0)
-        videos = list_idea_radar_videos(limit, days)
+        include_deleted = request.args.get("includeDeleted") in {"1", "true", "True"}
+        videos = list_idea_radar_videos(limit, days, include_deleted)
         return jsonify({"code": 200, "msg": "success", "data": videos}), 200
     except Exception as e:
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
+
+
+def normalize_manual_video_url(value):
+    value = str(value or '').strip()
+    if not value:
+        return ''
+    match = re.search(r'https?://[^\s<>"\']+', value, flags=re.IGNORECASE)
+    if not match:
+        return ''
+    url = match.group(0).rstrip('，。！？；：,!?;:)）]】').split('#')[0]
+    hostname = (urlparse(url).hostname or '').lower()
+    if hostname not in {'douyin.com', 'iesdouyin.com'} and not hostname.endswith(
+        ('.douyin.com', '.iesdouyin.com')
+    ):
+        return ''
+    return url
 
 
 @app.route('/idea-radar/douyin/videos/manual', methods=['POST'])
 def add_manual_idea_radar_video():
     try:
         payload = request.get_json(silent=True) or {}
-        def normalize_manual_url(value):
-            value = str(value or '').strip()
-            if not value:
-                return ''
-            if not value.startswith(('http://', 'https://')):
-                value = f'https://{value}'
-            return value.split('?')[0].split('#')[0]
         video_url = str(payload.get('videoUrl') or payload.get('video_url') or '').strip()
-        video_id = benchmark_repository.add_manual_video(get_db_path(), video_url, normalize_manual_url)
+        video_id = benchmark_repository.add_manual_video(
+            get_db_path(), video_url, normalize_manual_video_url
+        )
         inspect_error = None
         try:
-            inspection = video_jiexi_client.inspect(normalize_manual_url(video_url), settings=load_runtime_settings())
+            inspection = video_jiexi_client.inspect(
+                normalize_manual_video_url(video_url), settings=load_runtime_settings()
+            )
             benchmark_repository.update_manual_video_metadata(get_db_path(), video_id, inspection)
         except Exception as exc:
             inspect_error = str(exc)[:300]
@@ -2762,6 +2791,59 @@ def update_manual_idea_radar_video_details(video_id):
         return jsonify({"code": 200, "msg": "success", "data": load_idea_radar_video(video_id)}), 200
     except Exception as exc:
         return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
+
+
+@app.route('/idea-radar/douyin/videos/<int:video_id>/manual-url', methods=['PATCH'])
+def replace_manual_idea_radar_video_url(video_id):
+    try:
+        payload = request.get_json(silent=True) or {}
+        video_url = str(payload.get('videoUrl') or payload.get('video_url') or '').strip()
+        ok = benchmark_repository.replace_manual_video_url(
+            get_db_path(), video_id, video_url, normalize_manual_video_url
+        )
+        if not ok:
+            return jsonify({"code": 404, "msg": "手动作品不存在", "data": None}), 404
+        try:
+            inspection = video_jiexi_client.inspect(
+                normalize_manual_video_url(video_url), settings=load_runtime_settings()
+            )
+            benchmark_repository.update_manual_video_metadata(get_db_path(), video_id, inspection)
+        except Exception as exc:
+            backend_log(f"manual video metadata inspection failed: {exc}")
+        task = start_idea_radar_pipeline(
+            video_id,
+            "",
+            force=True,
+            force_transcription=True,
+            transcribe_only=bool(load_runtime_settings().get("factsOnlyMode")),
+        )
+        return jsonify({
+            "code": 200,
+            "msg": "success",
+            "data": {"video": load_idea_radar_video(video_id), "task": task},
+        }), 200
+    except ValueError as exc:
+        return jsonify({"code": 400, "msg": str(exc), "data": None}), 400
+    except Exception as exc:
+        return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
+
+
+@app.route('/idea-radar/douyin/videos/<int:video_id>', methods=['DELETE'])
+def delete_idea_radar_video(video_id):
+    try:
+        idea_radar_job_registry.cancel_many([video_id])
+        deleted = benchmark_repository.delete_video_cascade(get_db_path(), video_id)
+        if not deleted:
+            return jsonify({"code": 404, "msg": "作品不存在", "data": None}), 404
+        return jsonify({"code": 200, "msg": "作品已删除", "data": deleted}), 200
+    except Exception as exc:
+        return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
+
+@app.route('/idea-radar/douyin/videos/<int:video_id>/restore', methods=['POST'])
+def restore_idea_radar_video(video_id):
+    if not benchmark_repository.restore_video(get_db_path(), video_id):
+        return jsonify({"code": 404, "msg": "作品不存在", "data": None}), 404
+    return jsonify({"code": 200, "msg": "作品已恢复", "data": None}), 200
 
 
 @app.route('/idea-radar/douyin/videos/<int:video_id>/analyze', methods=['POST'])
@@ -2790,6 +2872,20 @@ def get_idea_radar_video_status(video_id):
         if not load_idea_radar_video(video_id):
             return jsonify({"code": 404, "msg": "作品不存在", "data": None}), 404
         task = get_idea_radar_status_payload(video_id, get_idea_radar_transcript)
+        if (
+            task.get("status") in {"pending", "processing"}
+            and not idea_radar_job_registry.is_active(video_id)
+        ):
+            update_idea_radar_progress(
+                video_id,
+                task.get("stage") or "failed",
+                float(task.get("percent") or 0),
+                "后台任务曾被中断，请重新解析",
+                status="failed",
+                error_message="后台任务曾被中断，请重新解析",
+                finished_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            task = get_idea_radar_status_payload(video_id, get_idea_radar_transcript)
         return jsonify({"code": 200, "msg": "success", "data": task}), 200
     except Exception as e:
         return jsonify({"code": 500, "msg": str(e), "data": None}), 500
@@ -2904,7 +3000,7 @@ def invoke_mcp_tool():
         return jsonify({"code": 500, "msg": str(exc), "data": None}), 500
 
 
-@app.route('/deleteFile', methods=['GET'])
+@app.route('/deleteFile', methods=['DELETE'])
 def delete_file():
     file_id = request.args.get('id')
 
@@ -2922,7 +3018,8 @@ def delete_file():
                 "code": 404,
                 "msg": "File not found",
                 "data": None
-            }), 404
+                }), 404
+        material_service.remove_material_file(BASE_DIR, record.get('file_path'))
 
         return jsonify({
             "code": 200,
@@ -2940,9 +3037,16 @@ def delete_file():
             "data": None
         }), 500
 
-@app.route('/deleteAccount', methods=['GET'])
+@app.route('/deleteAccount', methods=['DELETE'])
 def delete_account():
-    account_id = int(request.args.get('id'))
+    raw_id = request.args.get('id')
+    if not raw_id or not raw_id.isdigit():
+        return jsonify({
+            "code": 400,
+            "msg": "Invalid or missing account ID",
+            "data": None
+        }), 400
+    account_id = int(raw_id)
 
     try:
         record = account_repository.delete_account(get_db_path(), account_id)
@@ -2996,7 +3100,10 @@ def updateUserinfo():
 if __name__ == '__main__':
     ensure_core_tables()
     ensure_default_agent_model()
+    backend_host = os.environ.get("SAU_BACKEND_HOST", "127.0.0.1")
+    if backend_host not in {"127.0.0.1", "localhost", "::1"} and not AUTH_REQUIRED:
+        raise RuntimeError("非本机监听必须启用 SAU_AUTH_REQUIRED=1")
     app.run(
-        host=os.environ.get("SAU_BACKEND_HOST", "127.0.0.1"),
+        host=backend_host,
         port=int(os.environ.get("SAU_BACKEND_PORT", "5409")),
     )

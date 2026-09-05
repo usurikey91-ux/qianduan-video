@@ -22,6 +22,7 @@
         <div class="filter-row">
           <el-input v-model="keyword" placeholder="搜索标题 / 账号" clearable />
           <el-segmented v-model="sourceFilter" :options="sourceFilterOptions" />
+          <el-checkbox v-model="showDeleted" @change="fetchVideos">显示已删除</el-checkbox>
         </div>
         <div class="time-filter">
           <div class="time-filter-label">
@@ -39,12 +40,15 @@
         </div>
 
         <el-scrollbar height="calc(100vh - 230px)" v-loading="loadingVideos">
-          <button
+          <div
             v-for="video in filteredVideos"
             :key="video.id"
             class="video-item"
             :class="{ active: selectedVideo?.id === video.id }"
             @click="selectVideo(video)"
+            @keydown.enter="selectVideo(video)"
+            role="button"
+            tabindex="0"
           >
             <div class="video-meta">
               <span class="account">{{ video.account_name || '对标账号' }}</span>
@@ -53,8 +57,17 @@
                 <span v-if="video.source_type !== 'manual'">{{ video.relative_multiple ? `${Number(video.relative_multiple).toFixed(1)}x` : '—' }}</span>
               </span>
             </div>
-            <div class="video-title">{{ video.title }}</div>
-          </button>
+            <div class="video-title-row">
+              <div class="video-title">{{ video.title }}</div>
+              <el-button
+                class="delete-video-button"
+                size="small"
+                text
+                type="danger"
+                @click.stop="video.deleted_at ? restoreVideo(video) : deleteVideo(video)"
+              >{{ video.deleted_at ? '恢复' : '删除' }}</el-button>
+            </div>
+          </div>
           <el-empty v-if="!loadingVideos && filteredVideos.length === 0" description="暂无入选作品" />
         </el-scrollbar>
       </section>
@@ -82,13 +95,6 @@
           <div v-if="taskState?.cleaned_transcript" class="section-block">
             <div class="section-label">原视频本地转写</div>
             <div class="transcript-box">{{ taskState.cleaned_transcript }}</div>
-          </div>
-          <div v-if="selectedVideo.source_type === 'manual'" class="section-block supplement-block">
-            <div class="section-label">补充信息</div>
-            <el-input v-model="manualDetails.title" class="supplement-input" placeholder="标题（可选）" />
-            <el-input v-model="manualDetails.uploader" class="supplement-input" placeholder="作者（可选）" />
-            <el-input v-model="manualDetails.notes" type="textarea" :rows="3" placeholder="备注、观察重点或补充上下文（可选）" />
-            <el-button size="small" type="primary" :loading="savingManualDetails" @click="saveManualDetails">保存补充信息</el-button>
           </div>
         </div>
         <template v-if="radar && !FACTS_ONLY_MODE">
@@ -242,7 +248,13 @@
           <template v-if="taskState.status === 'failed'">
             <el-result icon="error" title="视频解析失败" :sub-title="taskState.error_message || '请重新解析'">
               <template #extra>
-                <span class="facts-only-note">事实采集失败，请稍后刷新作品列表</span>
+                <el-space>
+                  <el-button type="primary" @click="retrySelectedVideo">重新解析</el-button>
+                  <el-button
+                    v-if="selectedVideo?.source_type === 'manual'"
+                    @click="repairDialog = true"
+                  >更新链接</el-button>
+                </el-space>
               </template>
             </el-result>
             <el-alert
@@ -301,16 +313,28 @@
   </div>
   <el-dialog v-model="manualDialog" title="手动添加作品" width="520px">
     <el-form @submit.prevent="addManualVideo">
-      <el-form-item label="作品链接"><el-input v-model="manualUrl" placeholder="粘贴抖音或其他支持平台的作品链接" /></el-form-item>
+      <el-form-item label="作品链接"><el-input v-model="manualUrl" placeholder="粘贴抖音作品链接或完整分享文本" /></el-form-item>
       <p class="dialog-note">添加后会进入“手动添加”，不参与中位数和入选倍数判断；选择作品后可下载原视频并用本地 Whisper 转写。</p>
     </el-form>
     <template #footer><el-button @click="manualDialog=false">取消</el-button><el-button type="primary" :loading="addingManual" @click="addManualVideo">添加作品</el-button></template>
+  </el-dialog>
+  <el-dialog v-model="repairDialog" title="更新作品链接" width="520px">
+    <el-form @submit.prevent="repairManualVideo">
+      <el-form-item label="作品链接">
+        <el-input v-model="repairUrl" placeholder="粘贴包含 https://v.douyin.com/... 的完整分享文本" />
+      </el-form-item>
+      <p class="dialog-note">更新后会清除本条作品的失败记录，并立即在本机重新下载和转写。</p>
+    </el-form>
+    <template #footer>
+      <el-button @click="repairDialog = false">取消</el-button>
+      <el-button type="primary" :loading="repairingManual" @click="repairManualVideo">更新并重试</el-button>
+    </template>
   </el-dialog>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { benchmarkApi } from '@/api/benchmark'
 import { useRouter } from 'vue-router'
 
@@ -320,6 +344,7 @@ const radar = ref(null)
 const taskState = ref(null)
 const keyword = ref('')
 const sourceFilter = ref(localStorage.getItem('ideaRadarSourceFilter') || 'all')
+const showDeleted = ref(false)
 const sourceFilterOptions = [
   { label: '全部', value: 'all' },
   { label: '对标入选', value: 'benchmark' },
@@ -328,8 +353,9 @@ const sourceFilterOptions = [
 const manualDialog = ref(false)
 const manualUrl = ref('')
 const addingManual = ref(false)
-const savingManualDetails = ref(false)
-const manualDetails = ref({ title: '', uploader: '', notes: '' })
+const repairDialog = ref(false)
+const repairUrl = ref('')
+const repairingManual = ref(false)
 const savedDays = Number(localStorage.getItem('ideaRadarDays') || 0)
 const selectedDays = ref(Number.isFinite(savedDays) ? Math.min(90, Math.max(0, savedDays)) : 0)
 const loadingVideos = ref(false)
@@ -384,7 +410,7 @@ const formatDuration = (seconds) => {
 const fetchVideos = async () => {
   loadingVideos.value = true
   try {
-    const res = await benchmarkApi.getIdeaRadarVideos(100, selectedDays.value)
+    const res = await benchmarkApi.getIdeaRadarVideos(100, selectedDays.value, showDeleted.value)
     videos.value = res.data || []
     if (selectedVideo.value && !videos.value.some((video) => video.id === selectedVideo.value.id)) {
       selectedVideo.value = null
@@ -402,17 +428,104 @@ const fetchVideos = async () => {
   }
 }
 
+const restoreVideo = async (video) => {
+  try {
+    await benchmarkApi.restoreIdeaRadarVideo(video.id)
+    ElMessage.success('作品已恢复')
+    await fetchVideos()
+  } catch (error) { ElMessage.error(error?.message || '恢复作品失败') }
+}
+
 const addManualVideo = async () => {
   if (!manualUrl.value.trim()) return ElMessage.warning('请先粘贴作品链接')
   addingManual.value = true
   try {
-    await benchmarkApi.addManualIdeaRadarVideo(manualUrl.value.trim())
+    const res = await benchmarkApi.addManualIdeaRadarVideo(manualUrl.value.trim())
+    const addedId = res.data?.id
     manualDialog.value = false
     manualUrl.value = ''
     await fetchVideos()
+    const addedVideo = videos.value.find((video) => video.id === addedId)
+    if (addedVideo) await selectVideo(addedVideo)
     ElMessage.success('已添加到手动添加')
   } catch (error) { ElMessage.error(error?.message || '添加作品失败') }
   finally { addingManual.value = false }
+}
+
+const deleteVideo = async (video) => {
+  try {
+    await ElMessageBox.confirm(
+      `删除后会同时清理这条作品的本地转写、分析和运行记录。确定删除“${video.title || '待抓取作品'}”吗？`,
+      '删除作品',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  const wasSelected = selectedVideo.value?.id === video.id
+  try {
+    await benchmarkApi.deleteIdeaRadarVideo(video.id)
+    videos.value = videos.value.filter((item) => item.id !== video.id)
+    if (wasSelected) {
+      stopPolling()
+      selectionToken += 1
+      selectedVideo.value = null
+      radar.value = null
+      taskState.value = null
+      if (videos.value.length) await selectVideo(videos.value[0])
+    }
+    ElMessage.success('作品已删除')
+  } catch (error) {
+    ElMessage.error(error?.message || '删除作品失败')
+  }
+}
+
+const repairManualVideo = async () => {
+  if (!selectedVideo.value || selectedVideo.value.source_type !== 'manual') return
+  if (!repairUrl.value.trim()) return ElMessage.warning('请粘贴完整的作品分享文本')
+  repairingManual.value = true
+  try {
+    const videoId = selectedVideo.value.id
+    const token = ++selectionToken
+    stopPolling()
+    const res = await benchmarkApi.replaceManualIdeaRadarVideoUrl(
+      videoId,
+      repairUrl.value.trim(),
+    )
+    if (token !== selectionToken || selectedVideo.value?.id !== videoId) return
+    selectedVideo.value = { ...selectedVideo.value, ...(res.data?.video || {}) }
+    videos.value = videos.value.map((item) => item.id === selectedVideo.value.id ? selectedVideo.value : item)
+    applyTaskState(res.data?.task)
+    repairDialog.value = false
+    repairUrl.value = ''
+    if (['pending', 'processing'].includes(res.data?.task?.status)) {
+      startPolling(selectedVideo.value.id, token)
+    }
+    ElMessage.success('链接已更新，正在本机重新解析')
+  } catch (error) {
+    ElMessage.error(error?.message || '更新作品链接失败')
+  } finally {
+    repairingManual.value = false
+  }
+}
+
+const retrySelectedVideo = async () => {
+  if (!selectedVideo.value) return
+  const videoId = selectedVideo.value.id
+  const token = ++selectionToken
+  stopPolling()
+  analyzing.value = true
+  try {
+    const res = await benchmarkApi.analyzeIdeaRadarVideo(videoId, {
+      force: true,
+      forceTranscription: true,
+    })
+    if (token !== selectionToken || selectedVideo.value?.id !== videoId) return
+    applyTaskState(res.data)
+    if (['pending', 'processing'].includes(res.data?.status)) startPolling(videoId, token)
+  } finally {
+    analyzing.value = false
+  }
 }
 
 const selectVideo = async (video) => {
@@ -420,7 +533,6 @@ const selectVideo = async (video) => {
   const token = selectionToken
   stopPolling()
   selectedVideo.value = video
-  manualDetails.value = { title: video.title || '', uploader: video.account_name || '', notes: video.notes || '' }
   radar.value = null
   taskState.value = null
   analyzing.value = true
@@ -428,12 +540,12 @@ const selectVideo = async (video) => {
     const res = await benchmarkApi.getIdeaRadarStatus(video.id)
     if (token !== selectionToken) return
     applyTaskState(res.data)
-    if (!res.data?.cleaned_transcript && res.data?.status !== 'processing') {
+    if (!res.data?.cleaned_transcript && res.data?.status === 'idle') {
       const task = await benchmarkApi.analyzeIdeaRadarVideo(video.id, { forceTranscription: true })
       if (token !== selectionToken) return
       applyTaskState(task.data)
-      if (task.data?.status === 'processing') startPolling(video.id, token)
-    } else if (res.data?.status === 'processing') {
+      if (['pending', 'processing'].includes(task.data?.status)) startPolling(video.id, token)
+    } else if (['pending', 'processing'].includes(res.data?.status)) {
       startPolling(video.id, token)
     }
   } catch (error) {
@@ -442,18 +554,6 @@ const selectVideo = async (video) => {
   } finally {
     analyzing.value = false
   }
-}
-
-const saveManualDetails = async () => {
-  if (!selectedVideo.value || selectedVideo.value.source_type !== 'manual') return
-  savingManualDetails.value = true
-  try {
-    const res = await benchmarkApi.updateManualIdeaRadarVideo(selectedVideo.value.id, manualDetails.value)
-    selectedVideo.value = { ...selectedVideo.value, ...(res.data || {}) }
-    videos.value = videos.value.map((item) => item.id === selectedVideo.value.id ? selectedVideo.value : item)
-    ElMessage.success('补充信息已保存')
-  } catch (error) { ElMessage.error(error?.message || '保存补充信息失败') }
-  finally { savingManualDetails.value = false }
 }
 
 const applyTaskState = (state) => {
@@ -629,6 +729,22 @@ onBeforeUnmount(stopPolling)
   color: var(--sau-ink);
   font-size: 14px;
   line-height: 1.55;
+}
+
+.video-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.video-title-row .video-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.delete-video-button {
+  flex: 0 0 auto;
+  padding: 0 2px;
 }
 
 .result-panel {

@@ -687,7 +687,8 @@ index ea4f6ff..ff6844a 100644
 --- a/backend/services/content_detection.py
 +++ b/backend/services/content_detection.py
 @@ -3,11 +3,16 @@
- from datetime import timedelta
+-from datetime import timedelta
++from datetime import datetime, timedelta, timezone
  from typing import Any
  
 -from sqlalchemy import select
@@ -705,7 +706,7 @@ index ea4f6ff..ff6844a 100644
  
  
  FINAL_WINDOW = timedelta(days=7)
-@@ -22,6 +27,41 @@ _METRIC_ATTRIBUTES = {
+@@ -22,6 +27,47 @@ _METRIC_ATTRIBUTES = {
      "share_count": "share_count",
  }
  
@@ -717,6 +718,12 @@ index ea4f6ff..ff6844a 100644
 +    "inherit_global": True,
 +}
 +MINIMUM_REFERENCE_WORKS = 5
++
++
++def _as_utc(value: datetime) -> datetime:
++    if value.tzinfo is None:
++        return value.replace(tzinfo=timezone.utc)
++    return value.astimezone(timezone.utc)
 +
 +
 +def monitoring_rules_for_account(account: ContentAccount | None) -> dict[str, Any]:
@@ -762,7 +769,8 @@ index ea4f6ff..ff6844a 100644
      if not selected_metrics or any(name not in _METRIC_ATTRIBUTES for name in selected_metrics):
 @@ -96,27 +136,33 @@ async def evaluate_final_snapshot(
          return None
-     if snapshot.collected_at < work.published_at + FINAL_WINDOW:
+-    if snapshot.collected_at < work.published_at + FINAL_WINDOW:
++    if _as_utc(snapshot.collected_at) < _as_utc(work.published_at) + FINAL_WINDOW:
          return None
 +    account = await session.get(ContentAccount, work.account_id)
 +    rules = monitoring_rules_for_account(account)
@@ -863,7 +871,7 @@ index ea4f6ff..ff6844a 100644
      evidence["reasons"] = [
          "基于当前公开数据快照的早期筛选，满 7 天后会用最终快照复核",
          *evidence.get("reasons", []),
-@@ -239,3 +296,34 @@ async def evaluate_observed_snapshot(
+@@ -239,3 +302,37 @@ async def evaluate_observed_snapshot(
      detection.evidence = evidence
      await session.flush()
      return detection
@@ -893,7 +901,10 @@ index ea4f6ff..ff6844a 100644
 +            session, snapshot_id=snapshot.id, metric_names=metric_names
 +        ):
 +            recalculated += 1
-+        if work.published_at and snapshot.collected_at >= work.published_at + FINAL_WINDOW:
++        if (
++            work.published_at
++            and _as_utc(snapshot.collected_at) >= _as_utc(work.published_at) + FINAL_WINDOW
++        ):
 +            await evaluate_final_snapshot(
 +                session, snapshot_id=snapshot.id, metric_names=metric_names
 +            )

@@ -237,6 +237,12 @@ npm.cmd run dev -- --host 127.0.0.1 --port 5174
 ```env
 SAU_BACKEND_HOST=127.0.0.1
 SAU_BACKEND_PORT=5409
+# 默认只允许本机前端跨域；增加部署地址时用逗号分隔
+SAU_ALLOWED_ORIGINS=http://127.0.0.1:5174,http://localhost:5174
+# 仅在需要局域网/公网监听时启用，并同时设置管理员密码
+SAU_AUTH_REQUIRED=0
+SAU_ADMIN_USER=admin
+SAU_ADMIN_PASSWORD=
 
 OPENCLI_ADMIN_BASE_URL=http://127.0.0.1:8031/api/v1
 OPENCLI_ADMIN_API_TOKEN=

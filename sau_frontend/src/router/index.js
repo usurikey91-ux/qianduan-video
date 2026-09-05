@@ -6,6 +6,7 @@ import OwnContentReview from '../views/OwnContentReview.vue'
 import PlatformConnections from '../views/PlatformConnections.vue'
 import AgentModels from '../views/AgentModels.vue'
 import VideoInspector from '../views/VideoInspector.vue'
+import MaterialManagement from '../views/MaterialManagement.vue'
 
 const routes = [
   {
@@ -20,7 +21,7 @@ const routes = [
   {
     path: '/material-management',
     name: 'MaterialManagement',
-    redirect: '/video-inspector'
+    component: MaterialManagement
   },
   {
     path: '/benchmark-management',

@@ -39,6 +39,10 @@
           <el-icon><VideoPlay /></el-icon>
           <template #title>视频解析</template>
         </el-menu-item>
+        <el-menu-item index="/material-management">
+          <el-icon><FolderOpened /></el-icon>
+          <template #title>素材管理</template>
+        </el-menu-item>
         <el-menu-item index="/agent-models">
           <el-icon><Setting /></el-icon>
           <template #title>设置</template>
@@ -105,7 +109,8 @@ import {
   Sunny,
   Moon,
   TrendCharts,
-  VideoPlay
+  VideoPlay,
+  FolderOpened
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -121,6 +126,7 @@ const pageMeta = {
   '/platform-connections': { kicker: 'Connections', title: '账号连接' },
   '/own-content-review': { kicker: 'Review', title: '作品复盘' },
   '/video-inspector': { kicker: 'Video Jiexi', title: '视频解析' },
+  '/material-management': { kicker: 'Materials', title: '素材管理' },
   '/data': { kicker: 'Data', title: '数据明细' },
   '/agent-models': { kicker: 'Settings', title: '设置' }
 }

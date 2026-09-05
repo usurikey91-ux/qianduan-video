@@ -21,7 +21,7 @@ const props = defineProps({
 const projects = [
   {
     label: '本工作台源码',
-    url: 'https://github.com/usurikey91-ux/zimeiti-qianduan-neirong-chaijie',
+    url: 'https://github.com/usurikey91-ux/qianduan-video',
     role: '二创入口',
     contexts: ['all', 'review', 'benchmark'],
     description: '当前自媒体内容拆解工作台源码'

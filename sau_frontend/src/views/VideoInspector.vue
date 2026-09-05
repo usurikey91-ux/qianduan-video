@@ -55,7 +55,9 @@
       <el-progress :percentage="Math.round(Number(task.progress) || 0)" :status="task.state === 'error' ? 'exception' : task.state === 'completed' ? 'success' : undefined" />
       <div class="task-message">{{ task.error || task.filename || '正在下载…' }}</div>
       <div class="task-actions">
-        <el-tag v-if="task.state === 'completed'" type="success">文件已保存到本地</el-tag>
+        <el-tag v-if="task.state === 'completed'" type="success">下载完成</el-tag>
+        <el-button v-if="task.state === 'completed'" type="primary" size="small" :loading="importing" @click="importMaterial">导入素材库</el-button>
+        <el-button v-if="['queued','downloading','processing'].includes(task.state)" size="small" @click="stopWaiting">停止等待</el-button>
       </div>
     </el-card>
   </div>
@@ -74,6 +76,7 @@ const task = ref(null)
 const taskId = ref('')
 const inspecting = ref(false)
 const downloading = ref(false)
+const importing = ref(false)
 const route = useRoute()
 const serviceAvailable = ref(false)
 const serviceBaseUrl = ref('')
@@ -122,6 +125,21 @@ async function download() {
     taskId.value = response.data?.id || ''
     startPolling()
   } finally { downloading.value = false }
+}
+
+async function importMaterial() {
+  if (!taskId.value) return
+  importing.value = true
+  try {
+    await videoJiexiApi.importMaterial(taskId.value)
+    ElMessage.success('已导入素材库')
+  } finally { importing.value = false }
+}
+
+function stopWaiting() {
+  if (pollTimer) clearInterval(pollTimer)
+  pollTimer = null
+  task.value = { ...task.value, state: 'cancelled', error: '已停止等待；远端任务可能仍在后台处理' }
 }
 
 function startPolling() {

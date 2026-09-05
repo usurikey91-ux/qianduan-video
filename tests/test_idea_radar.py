@@ -5,9 +5,127 @@ from unittest.mock import patch
 
 import sau_backend
 from backend_app.modules.benchmark import repository as benchmark_repository
+from backend_app.modules.idea_radar import repository as idea_radar_repository
+from backend_app.modules.idea_radar.jobs import IdeaRadarJobRegistry
 
 
 class IdeaRadarPipelineTests(unittest.TestCase):
+    def test_delete_video_cascade_removes_derived_records_only(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            db_path = Path(directory) / "radar.db"
+            benchmark_repository.ensure_tables(db_path)
+            with benchmark_repository.connect(db_path) as conn:
+                account_id = conn.execute(
+                    "INSERT INTO douyin_benchmark_accounts (homepage_url, nickname, status) VALUES (?, ?, 'success')",
+                    ("https://www.douyin.com/user/security-test", "测试账号"),
+                ).lastrowid
+                video_id = conn.execute(
+                    "INSERT INTO douyin_benchmark_videos (account_id, video_url, title) VALUES (?, ?, ?)",
+                    (account_id, "https://v.douyin.com/security-test", "待删除作品"),
+                ).lastrowid
+                conn.execute(
+                    "INSERT INTO douyin_benchmark_video_transcripts (video_id) VALUES (?)",
+                    (video_id,),
+                )
+                conn.execute(
+                    "INSERT INTO douyin_benchmark_video_analysis (video_id) VALUES (?)",
+                    (video_id,),
+                )
+                conn.commit()
+            deleted = benchmark_repository.delete_video_cascade(db_path, video_id)
+            self.assertEqual(video_id, deleted["id"])
+            self.assertIsNone(benchmark_repository.get_video(db_path, video_id))
+            self.assertEqual(1, len(benchmark_repository.list_accounts(db_path)))
+
+    def test_job_registry_reports_active_state(self):
+        registry = IdeaRadarJobRegistry()
+        self.assertFalse(registry.is_active(9))
+        self.assertTrue(registry.start(9))
+        self.assertTrue(registry.is_active(9))
+        registry.finish(9)
+        self.assertFalse(registry.is_active(9))
+
+    def test_manual_uploaders_are_scoped_per_video(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            db_path = Path(directory) / "radar.db"
+            first_id = benchmark_repository.add_manual_video(
+                db_path, "https://v.douyin.com/First/", lambda value: value
+            )
+            second_id = benchmark_repository.add_manual_video(
+                db_path, "https://v.douyin.com/Second/", lambda value: value
+            )
+            benchmark_repository.update_manual_video_details(
+                db_path, first_id, uploader="作者甲"
+            )
+            benchmark_repository.update_manual_video_details(
+                db_path, second_id, uploader="作者乙"
+            )
+
+            self.assertEqual(
+                "作者甲", benchmark_repository.get_video(db_path, first_id, True)["account_name"]
+            )
+            self.assertEqual(
+                "作者乙", benchmark_repository.get_video(db_path, second_id, True)["account_name"]
+            )
+
+    def test_replacing_manual_url_clears_failed_derived_data(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            db_path = Path(directory) / "radar.db"
+            video_id = benchmark_repository.add_manual_video(
+                db_path, "legacy", lambda _: "https://3.89"
+            )
+            idea_radar_repository.update_transcript(
+                db_path, video_id, status="failed", error_message="旧错误"
+            )
+
+            replaced = benchmark_repository.replace_manual_video_url(
+                db_path,
+                video_id,
+                "完整文本 https://v.douyin.com/New123/ 复制打开抖音",
+                sau_backend.normalize_manual_video_url,
+            )
+
+            self.assertTrue(replaced)
+            self.assertEqual(
+                "https://v.douyin.com/New123/",
+                benchmark_repository.get_video(db_path, video_id)["video_url"],
+            )
+            self.assertIsNone(idea_radar_repository.get_transcript(db_path, video_id))
+
+    def test_manual_share_text_extracts_the_real_url(self):
+        value = "3.89 复制打开抖音，看看作品 https://v.douyin.com/AbC123/ 其他文字"
+        self.assertEqual(
+            "https://v.douyin.com/AbC123/",
+            sau_backend.normalize_manual_video_url(value),
+        )
+
+    def test_manual_share_text_without_url_is_rejected(self):
+        self.assertEqual("", sau_backend.normalize_manual_video_url("复制打开抖音看看作品"))
+
+    def test_legacy_malformed_share_text_is_rejected(self):
+        self.assertEqual(
+            "",
+            sau_backend.normalize_manual_video_url(
+                "https://3.89 复制打开抖音，看看【土豆的作品】"
+            ),
+        )
+
+    @patch.object(sau_backend.video_jiexi_client, "base_url", return_value="")
+    @patch.object(sau_backend, "download_douyin_video")
+    def test_media_download_fallback_uses_wrapper_contract(self, download_video, _base_url):
+        download_video.return_value = Path("source.mp4")
+
+        result = sau_backend.download_idea_radar_media(
+            "https://v.douyin.com/AbC123/", Path("work"), progress_callback=lambda *_: None
+        )
+
+        self.assertEqual(Path("source.mp4"), result)
+        download_video.assert_called_once()
+        self.assertEqual(
+            {"progress_callback": download_video.call_args.kwargs["progress_callback"]},
+            download_video.call_args.kwargs,
+        )
+
     def test_radar_hides_stale_monitor_mirrors(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             db_path = Path(directory) / "radar.db"
@@ -84,7 +202,7 @@ class IdeaRadarPipelineTests(unittest.TestCase):
     @patch.object(sau_backend, "update_idea_radar_transcript")
     @patch.object(sau_backend, "run_codex_structured")
     @patch.object(sau_backend, "transcribe_idea_radar_media")
-    @patch.object(sau_backend, "download_douyin_video")
+    @patch.object(sau_backend, "download_idea_radar_media")
     @patch.object(sau_backend, "get_idea_radar_transcript")
     @patch.object(sau_backend, "load_idea_radar_video")
     def test_pipeline_transcribes_before_analysis(

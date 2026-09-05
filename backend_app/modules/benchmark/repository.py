@@ -67,6 +67,8 @@ def ensure_tables(db_path):
             cursor.execute("ALTER TABLE douyin_benchmark_videos ADD COLUMN source_type TEXT NOT NULL DEFAULT 'benchmark'")
         if "notes" not in video_columns:
             cursor.execute("ALTER TABLE douyin_benchmark_videos ADD COLUMN notes TEXT")
+        if "deleted_at" not in video_columns:
+            cursor.execute("ALTER TABLE douyin_benchmark_videos ADD COLUMN deleted_at DATETIME")
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS douyin_benchmark_video_analysis (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -202,16 +204,23 @@ def get_video(db_path, video_id, include_account=False):
                 SELECT v.*, a.nickname AS account_name
                 FROM douyin_benchmark_videos v
                 LEFT JOIN douyin_benchmark_accounts a ON a.id = v.account_id
-                WHERE v.id = ?
+                WHERE v.id = ? AND v.deleted_at IS NULL
                 """,
                 (video_id,),
             ).fetchone()
         else:
             row = conn.execute(
-                "SELECT * FROM douyin_benchmark_videos WHERE id = ?",
+                "SELECT * FROM douyin_benchmark_videos WHERE id = ? AND deleted_at IS NULL",
                 (video_id,)
             ).fetchone()
-    return dict(row) if row else None
+    item = dict(row) if row else None
+    if item and item.get("source_type") == "manual":
+        try:
+            raw_data = json.loads(item.get("raw_data") or "{}")
+        except Exception:
+            raw_data = {}
+        item["account_name"] = raw_data.get("manual_uploader") or item.get("account_name")
+    return item
 
 
 def get_analysis(db_path, video_id):
@@ -314,6 +323,30 @@ def delete_account_cascade(db_path, account_id):
             "transcripts": transcript_count,
         },
     }
+
+
+def delete_video_cascade(db_path, video_id):
+    """Delete one curated work and all derived local analysis data."""
+    ensure_tables(db_path)
+    with sqlite3.connect(Path(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        video = conn.execute(
+            "SELECT id, account_id, title, video_url, source_type FROM douyin_benchmark_videos WHERE id = ?",
+            (video_id,),
+        ).fetchone()
+        if not video:
+            return None
+        conn.execute("UPDATE douyin_benchmark_videos SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", (video_id,))
+        conn.commit()
+    return dict(video)
+
+
+def restore_video(db_path, video_id):
+    ensure_tables(db_path)
+    with sqlite3.connect(Path(db_path)) as conn:
+        cur = conn.execute("UPDATE douyin_benchmark_videos SET deleted_at = NULL WHERE id = ?", (video_id,))
+        conn.commit()
+    return cur.rowcount > 0
 
 
 def save_sync(db_path, account_id, data):
@@ -447,6 +480,7 @@ def list_idea_radar_videos(
     entry_multiple=5.0,
     days=0,
     active_monitor_urls=None,
+    include_deleted=False,
 ):
     ensure_tables(db_path)
     try:
@@ -466,8 +500,10 @@ def list_idea_radar_videos(
             FROM douyin_benchmark_videos v
             LEFT JOIN douyin_benchmark_accounts a ON a.id = v.account_id
             WHERE COALESCE(v.title, '') != ''
+              AND (? = 1 OR v.deleted_at IS NULL)
             ORDER BY v.id DESC
-            """
+            """,
+            (1 if include_deleted else 0,),
         ).fetchall()
     finally:
         conn.close()
@@ -508,6 +544,8 @@ def list_idea_radar_videos(
             continue
         item["hot_status"] = "manual" if is_manual else "selected"
         item["source_type"] = "manual" if is_manual else "benchmark"
+        if is_manual:
+            item["account_name"] = raw_data.get("manual_uploader") or item.get("account_name")
         item["relative_multiple"] = relative_multiple
         item["monitor_metrics"] = monitor_work.get("latest_public_metrics") or raw_data.get("metrics") or {}
         item["like_score"] = parse_metric_number(item.get("like_count"))
@@ -547,12 +585,17 @@ def update_manual_video_metadata(db_path, video_id, metadata):
     cover = str(metadata.get("thumbnail") or metadata.get("cover_url") or "").strip()
     uploader = str(metadata.get("uploader") or metadata.get("author") or "").strip()
     with sqlite3.connect(Path(db_path)) as conn:
-        row = conn.execute("SELECT account_id FROM douyin_benchmark_videos WHERE id = ? AND source_type = 'manual'", (video_id,)).fetchone()
+        row = conn.execute("SELECT raw_data FROM douyin_benchmark_videos WHERE id = ? AND source_type = 'manual'", (video_id,)).fetchone()
         if not row:
             return False
+        try:
+            raw_data = json.loads(row[0] or "{}")
+        except Exception:
+            raw_data = {}
+        raw_data.update({"manual": True, "inspection": metadata})
         if uploader:
-            conn.execute("UPDATE douyin_benchmark_accounts SET nickname = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (uploader, row[0]))
-        conn.execute("UPDATE douyin_benchmark_videos SET title = COALESCE(NULLIF(?, ''), title), cover_url = COALESCE(NULLIF(?, ''), cover_url), raw_data = ? WHERE id = ?", (title, cover, json.dumps({"manual": True, "inspection": metadata}, ensure_ascii=False), video_id))
+            raw_data["manual_uploader"] = uploader
+        conn.execute("UPDATE douyin_benchmark_videos SET title = COALESCE(NULLIF(?, ''), title), cover_url = COALESCE(NULLIF(?, ''), cover_url), raw_data = ? WHERE id = ?", (title, cover, json.dumps(raw_data, ensure_ascii=False), video_id))
         conn.commit()
     return True
 
@@ -560,12 +603,56 @@ def update_manual_video_metadata(db_path, video_id, metadata):
 def update_manual_video_details(db_path, video_id, title=None, uploader=None, notes=None):
     ensure_tables(db_path)
     with sqlite3.connect(Path(db_path)) as conn:
-        row = conn.execute("SELECT account_id FROM douyin_benchmark_videos WHERE id = ? AND source_type = 'manual'", (video_id,)).fetchone()
+        row = conn.execute("SELECT raw_data FROM douyin_benchmark_videos WHERE id = ? AND source_type = 'manual'", (video_id,)).fetchone()
         if not row:
             return False
-        if uploader is not None and str(uploader).strip():
-            conn.execute("UPDATE douyin_benchmark_accounts SET nickname = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (str(uploader).strip(), row[0]))
-        conn.execute("UPDATE douyin_benchmark_videos SET title = COALESCE(NULLIF(?, ''), title), notes = ? WHERE id = ?", (str(title or '').strip(), None if notes is None else str(notes).strip(), video_id))
+        try:
+            raw_data = json.loads(row[0] or "{}")
+        except Exception:
+            raw_data = {}
+        if uploader is not None:
+            uploader_text = str(uploader).strip()
+            if uploader_text:
+                raw_data["manual_uploader"] = uploader_text
+            else:
+                raw_data.pop("manual_uploader", None)
+        conn.execute("UPDATE douyin_benchmark_videos SET title = COALESCE(NULLIF(?, ''), title), notes = ?, raw_data = ? WHERE id = ?", (str(title or '').strip(), None if notes is None else str(notes).strip(), json.dumps(raw_data, ensure_ascii=False), video_id))
+        conn.commit()
+    return True
+
+
+def replace_manual_video_url(db_path, video_id, video_url, normalize_url):
+    """Replace a broken manual URL and clear derived data before retrying."""
+    video_url = normalize_url(video_url)
+    if not video_url:
+        raise ValueError("无效的作品链接")
+    ensure_tables(db_path)
+    with sqlite3.connect(Path(db_path)) as conn:
+        row = conn.execute(
+            "SELECT id, account_id, raw_data FROM douyin_benchmark_videos WHERE id = ? AND source_type = 'manual'",
+            (video_id,),
+        ).fetchone()
+        if not row:
+            return False
+        duplicate = conn.execute(
+            "SELECT id FROM douyin_benchmark_videos WHERE account_id = ? AND video_url = ? AND id != ?",
+            (row[1], video_url, video_id),
+        ).fetchone()
+        if duplicate:
+            raise ValueError("该作品已经存在")
+        try:
+            raw_data = json.loads(row[2] or "{}")
+        except Exception:
+            raw_data = {}
+        replacement_data = {"manual": True}
+        if raw_data.get("manual_uploader"):
+            replacement_data["manual_uploader"] = raw_data["manual_uploader"]
+        conn.execute(
+            "UPDATE douyin_benchmark_videos SET video_url = ?, cover_url = NULL, raw_data = ? WHERE id = ?",
+            (video_url, json.dumps(replacement_data, ensure_ascii=False), video_id),
+        )
+        conn.execute("DELETE FROM douyin_benchmark_video_transcripts WHERE video_id = ?", (video_id,))
+        conn.execute("DELETE FROM douyin_benchmark_video_analysis WHERE video_id = ?", (video_id,))
         conn.commit()
     return True
 

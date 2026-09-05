@@ -71,11 +71,14 @@ export const benchmarkApi = {
     return http.post('/benchmark/douyin/auto-discover', { keywords, limit, maxVideos })
   },
 
-  getIdeaRadarVideos: (limit = 80, days = 0) => {
-    return http.get('/idea-radar/douyin/videos', { limit, days })
+  getIdeaRadarVideos: (limit = 80, days = 0, includeDeleted = false) => {
+    return http.get('/idea-radar/douyin/videos', { limit, days, includeDeleted })
   },
   addManualIdeaRadarVideo: (videoUrl) => http.post('/idea-radar/douyin/videos/manual', { videoUrl }),
   updateManualIdeaRadarVideo: (videoId, payload) => http.patch(`/idea-radar/douyin/videos/${videoId}/manual-details`, payload),
+  replaceManualIdeaRadarVideoUrl: (videoId, videoUrl) => http.patch(`/idea-radar/douyin/videos/${videoId}/manual-url`, { videoUrl }),
+  deleteIdeaRadarVideo: (videoId) => http.delete(`/idea-radar/douyin/videos/${videoId}`),
+  restoreIdeaRadarVideo: (videoId) => http.post(`/idea-radar/douyin/videos/${videoId}/restore`),
 
   analyzeIdeaRadarVideo: (videoId, options = {}) => {
     return http.post(`/idea-radar/douyin/videos/${videoId}/analyze`, {

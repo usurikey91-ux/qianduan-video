@@ -20,12 +20,22 @@ def ensure_admin_table(db_path):
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         ''')
-        default_username = os.environ.get("SAU_ADMIN_USER", "admin")
-        default_password = os.environ.get("SAU_ADMIN_PASSWORD", "admin123")
-        cursor.execute("SELECT id FROM local_admins WHERE username = ?", (default_username,))
-        if cursor.fetchone() is None:
+        auth_required = os.environ.get("SAU_AUTH_REQUIRED", "0").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        default_username = os.environ.get("SAU_ADMIN_USER", "admin").strip() or "admin"
+        default_password = os.environ.get("SAU_ADMIN_PASSWORD", "").strip()
+        if auth_required and not default_password:
+            raise RuntimeError("启用认证时必须设置 SAU_ADMIN_PASSWORD")
+        if auth_required:
             cursor.execute(
-                "INSERT INTO local_admins (username, password_hash, display_name) VALUES (?, ?, ?)",
+                """
+                INSERT INTO local_admins (username, password_hash, display_name)
+                VALUES (?, ?, ?)
+                ON CONFLICT(username) DO UPDATE SET
+                    password_hash = excluded.password_hash,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
                 (default_username, generate_password_hash(default_password), "Administrator"),
             )
         conn.commit()

@@ -26,6 +26,10 @@ class IdeaRadarJobRegistry:
         with self._lock:
             return video_id in self._cancelled
 
+    def is_active(self, video_id):
+        with self._lock:
+            return video_id in self._active
+
     def start(self, video_id):
         with self._lock:
             if video_id in self._active:
