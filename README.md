@@ -158,8 +158,8 @@ flowchart LR
 克隆项目：
 
 ```powershell
-git clone https://github.com/usurikey91-ux/zimeiti-qianduan-neirong-chaijie.git
-cd zimeiti-qianduan-neirong-chaijie
+git clone https://github.com/usurikey91-ux/qianduan-video.git
+cd qianduan-video
 ```
 
 初始化本机环境（会在 Git 忽略的 `.runtime` 目录中自动安装固定版本的抖音连接器、OpenCLI、OpenCLI Admin 和视频解析运行时）：
@@ -258,7 +258,7 @@ OPENCLI_PATH=
 
 | 项目 | 在本工作台中的作用 |
 | --- | --- |
-| [本工作台源码](https://github.com/usurikey91-ux/zimeiti-qianduan-neirong-chaijie) | 当前产品实现与二创入口 |
+| [本工作台源码](https://github.com/usurikey91-ux/qianduan-video) | 当前产品实现与二创入口 |
 | [niupTang/douyin](https://github.com/niupTang/douyin) | 项目底座与历史多平台能力参考 |
 | [Kuhakucai/douyin-mcp](https://github.com/Kuhakucai/douyin-mcp) | 当前抖音作品复盘连接器 |
 | [xpzouying/xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) | 小红书连接器参考实现 |
