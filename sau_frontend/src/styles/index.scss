@@ -18,78 +18,96 @@ body {
   min-height: 100vh;
 }
 
-// Monochrome workbench palette with neutral contrast for long editing sessions.
+// Silver-gray workbench palette with mustard accents for long editing sessions.
 :root {
   color-scheme: light;
-  --el-color-primary: #171717;
-  --el-color-primary-light-3: #525252;
-  --el-color-primary-light-5: #737373;
-  --el-color-primary-light-7: #b5b5b5;
-  --el-color-primary-light-8: #d4d4d4;
-  --el-color-primary-light-9: #eeeeee;
-  --el-color-primary-dark-2: #000000;
-  --sau-ink: #171717;
-  --sau-ink-soft: #525252;
-  --sau-muted: #7a7a7a;
+  --el-color-primary: #c89b2b;
+  --el-color-primary-light-3: #d7b45f;
+  --el-color-primary-light-5: #e3ca91;
+  --el-color-primary-light-7: #eee0bd;
+  --el-color-primary-light-8: #f4ead2;
+  --el-color-primary-light-9: #faf5e9;
+  --el-color-primary-dark-2: #9f7418;
+  --sau-ink: #202124;
+  --sau-ink-soft: #55585d;
+  --sau-muted: #7b7e83;
   --sau-paper: #ffffff;
-  --sau-paper-muted: #f5f5f4;
-  --sau-soft: #eeeeec;
-  --sau-page: #f2f2f0;
-  --sau-line: #dededb;
-  --sau-accent: #171717;
-  --sau-accent-hover: #000000;
-  --sau-accent-contrast: #ffffff;
-  --sau-focus-ring: rgba(23, 23, 23, 0.14);
-  --sau-accent-soft: #ededeb;
-  --sau-warm: #555555;
-  --sau-warm-soft: #eeeeec;
-  --sau-sidebar: #151515;
-  --sau-topbar: rgba(255, 255, 255, 0.9);
+  --sau-paper-muted: #f6f6f5;
+  --sau-soft: #eceeef;
+  --sau-page: #f1f2f3;
+  --sau-line: #dcdde0;
+  --sau-accent: #c89b2b;
+  --sau-accent-hover: #b4861f;
+  --sau-accent-contrast: #211a08;
+  --sau-focus-ring: rgba(200, 155, 43, 0.22);
+  --sau-accent-soft: #fbf4df;
+  --sau-warm: #9f7418;
+  --sau-warm-soft: #f8f1df;
+  --sau-sidebar: #f0f1f2;
+  --sau-sidebar-line: #dadcdf;
+  --sau-sidebar-ink: #292b2f;
+  --sau-sidebar-muted: #676a70;
+  --sau-sidebar-hover: rgba(200, 155, 43, 0.11);
+  --sau-sidebar-active: #f1e5c5;
+  --sau-sidebar-active-ink: #49370b;
+  --sau-sidebar-panel: rgba(255, 255, 255, 0.58);
+  --sau-sidebar-control: #e4e5e7;
+  --sau-sidebar-control-active: #ffffff;
+  --sau-topbar: rgba(255, 255, 255, 0.92);
   --sau-cinnabar: var(--sau-warm);
   --sau-cinnabar-soft: var(--sau-warm-soft);
-  --sau-brass: #686868;
+  --sau-brass: #8d6819;
   --sau-display-font: inherit;
 }
 
 :root.dark {
   color-scheme: dark;
-  --el-color-primary: #f5f5f4;
-  --el-color-primary-light-3: #d4d4d4;
-  --el-color-primary-light-5: #a3a3a3;
-  --el-color-primary-light-7: #666666;
-  --el-color-primary-light-8: #484848;
-  --el-color-primary-light-9: #2d2d2d;
-  --el-color-primary-dark-2: #ffffff;
-  --el-bg-color: #181818;
-  --el-bg-color-overlay: #222222;
-  --el-fill-color-blank: #181818;
-  --el-fill-color-light: #242424;
-  --el-fill-color-lighter: #2c2c2c;
-  --el-border-color: #3d3d3d;
-  --el-border-color-light: #343434;
-  --el-text-color-primary: #f5f5f4;
-  --el-text-color-regular: #d1d1d1;
-  --el-text-color-secondary: #a3a3a3;
-  --sau-ink: #f5f5f4;
-  --sau-ink-soft: #c2c2c2;
-  --sau-muted: #929292;
-  --sau-paper: #181818;
-  --sau-paper-muted: #222222;
-  --sau-soft: #292929;
-  --sau-page: #101010;
-  --sau-line: #353535;
-  --sau-accent: #f5f5f4;
-  --sau-accent-hover: #ffffff;
-  --sau-accent-contrast: #171717;
-  --sau-focus-ring: rgba(245, 245, 244, 0.16);
-  --sau-accent-soft: #303030;
-  --sau-warm: #d1d1d1;
-  --sau-warm-soft: #2a2a2a;
-  --sau-sidebar: #090909;
-  --sau-topbar: rgba(24, 24, 24, 0.94);
+  --el-color-primary: #ddb347;
+  --el-color-primary-light-3: #bd9b42;
+  --el-color-primary-light-5: #9b823d;
+  --el-color-primary-light-7: #665832;
+  --el-color-primary-light-8: #4a422d;
+  --el-color-primary-light-9: #322f27;
+  --el-color-primary-dark-2: #efca68;
+  --el-bg-color: #1b1c1f;
+  --el-bg-color-overlay: #24262a;
+  --el-fill-color-blank: #1b1c1f;
+  --el-fill-color-light: #27292d;
+  --el-fill-color-lighter: #2e3035;
+  --el-border-color: #414348;
+  --el-border-color-light: #37393e;
+  --el-text-color-primary: #f4f4f2;
+  --el-text-color-regular: #d0d1d2;
+  --el-text-color-secondary: #a4a6a9;
+  --sau-ink: #f4f4f2;
+  --sau-ink-soft: #c5c6c8;
+  --sau-muted: #989a9f;
+  --sau-paper: #1b1c1f;
+  --sau-paper-muted: #24262a;
+  --sau-soft: #2b2d31;
+  --sau-page: #121316;
+  --sau-line: #383a3f;
+  --sau-accent: #ddb347;
+  --sau-accent-hover: #edc65d;
+  --sau-accent-contrast: #211a08;
+  --sau-focus-ring: rgba(221, 179, 71, 0.2);
+  --sau-accent-soft: #332e20;
+  --sau-warm: #dfba57;
+  --sau-warm-soft: #302b20;
+  --sau-sidebar: #17181b;
+  --sau-sidebar-line: #303237;
+  --sau-sidebar-ink: #f1f1ef;
+  --sau-sidebar-muted: #aeb0b4;
+  --sau-sidebar-hover: rgba(221, 179, 71, 0.1);
+  --sau-sidebar-active: #ddb347;
+  --sau-sidebar-active-ink: #211a08;
+  --sau-sidebar-panel: rgba(255, 255, 255, 0.045);
+  --sau-sidebar-control: rgba(255, 255, 255, 0.055);
+  --sau-sidebar-control-active: #ddb347;
+  --sau-topbar: rgba(27, 28, 31, 0.94);
   --sau-cinnabar: var(--sau-warm);
   --sau-cinnabar-soft: var(--sau-warm-soft);
-  --sau-brass: #b8b8b8;
+  --sau-brass: #dfba57;
 }
 
 .el-card {
@@ -112,7 +130,7 @@ body {
   border-color: var(--sau-accent) !important;
   background: var(--sau-accent) !important;
   color: var(--sau-accent-contrast) !important;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 6px 14px rgba(124, 90, 12, 0.18);
 }
 
 .el-button--primary:hover,

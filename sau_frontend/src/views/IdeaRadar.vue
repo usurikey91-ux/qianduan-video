@@ -69,7 +69,7 @@
             <div class="source-actions">
               <el-tag :type="selectedVideo.source_type === 'manual' ? 'info' : 'danger'" effect="plain">{{ selectedVideo.source_type === 'manual' ? '手动添加' : '对标入选' }}</el-tag>
               <el-link :href="selectedVideo.video_url" target="_blank" type="primary">打开原作品</el-link>
-              <el-button size="small" type="success" @click="openVideoInspector">解析视频</el-button>
+              <el-button size="small" type="primary" @click="openVideoInspector">解析视频</el-button>
             </div>
           </div>
           <div class="metric-strip">
@@ -100,7 +100,7 @@
             <div class="source-actions">
               <el-tag v-if="selectedVideo?.hot_status" type="danger" effect="plain">已入选</el-tag>
               <el-link :href="radar.source.video_url" target="_blank" type="primary">打开原作品</el-link>
-              <el-button size="small" type="success" @click="openVideoInspector">解析视频</el-button>
+              <el-button size="small" type="primary" @click="openVideoInspector">解析视频</el-button>
             </div>
           </div>
 

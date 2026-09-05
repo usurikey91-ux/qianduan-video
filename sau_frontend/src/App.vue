@@ -161,7 +161,7 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
   top: 0;
   height: 100vh;
   overflow: hidden;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--sau-sidebar-line);
   background: var(--sau-sidebar);
   transition: width 0.24s ease;
 }
@@ -172,7 +172,7 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
   gap: 12px;
   height: 72px;
   padding: 0 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--sau-sidebar-line);
 }
 
 .brand-mark {
@@ -196,13 +196,13 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
   }
 
   strong {
-    color: #fffaf3;
+    color: var(--sau-sidebar-ink);
     font-size: 16px;
   }
 
   span {
     margin-top: 2px;
-    color: #b9c2c9;
+    color: var(--sau-sidebar-muted);
     font-size: 12px;
   }
 }
@@ -212,26 +212,26 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
   padding: 12px 10px;
   background: transparent;
   --el-menu-bg-color: transparent;
-  --el-menu-text-color: #b9c2c9;
-  --el-menu-hover-bg-color: rgba(255, 253, 249, 0.1);
-  --el-menu-active-color: var(--sau-sidebar);
+  --el-menu-text-color: var(--sau-sidebar-muted);
+  --el-menu-hover-bg-color: var(--sau-sidebar-hover);
+  --el-menu-active-color: var(--sau-sidebar-active-ink);
 
   :deep(.el-menu-item) {
     height: 42px;
     margin-bottom: 4px;
     border-radius: 8px;
-    color: #b9c2c9;
+    color: var(--sau-sidebar-muted);
   }
 
   :deep(.el-menu-item.is-active) {
-    background: rgba(255, 253, 249, 0.96);
-    color: var(--sau-sidebar);
-    box-shadow: 0 6px 18px rgba(8, 17, 26, 0.18);
+    background: var(--sau-sidebar-active);
+    color: var(--sau-sidebar-active-ink);
+    box-shadow: none;
   }
 
   :deep(.el-menu-item:hover) {
-    background: rgba(255, 253, 249, 0.1);
-    color: #fffaf3;
+    background: var(--sau-sidebar-hover);
+    color: var(--sau-sidebar-ink);
   }
 }
 
@@ -246,9 +246,9 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
 
 .sidebar-note {
   padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--sau-sidebar-line);
   border-radius: 10px;
-  background: rgba(255, 253, 249, 0.07);
+  background: var(--sau-sidebar-panel);
 
   span,
   strong {
@@ -257,12 +257,12 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
 
   span {
     margin-bottom: 6px;
-    color: #b9c2c9;
+    color: var(--sau-sidebar-muted);
     font-size: 12px;
   }
 
   strong {
-    color: #fffaf3;
+    color: var(--sau-sidebar-ink);
     font-size: 13px;
     line-height: 1.5;
   }
@@ -273,9 +273,9 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
   grid-template-columns: 1fr 1fr;
   gap: 3px;
   padding: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--sau-sidebar-line);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.13);
+  background: var(--sau-sidebar-control);
 
   button {
     min-height: 34px;
@@ -286,14 +286,14 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
     border: 0;
     border-radius: 6px;
     background: transparent;
-    color: #bfc9c2;
+    color: var(--sau-sidebar-muted);
     cursor: pointer;
   }
 
   button.active {
-    background: #f3f6f2;
-    color: #171717;
-    box-shadow: 0 2px 8px rgba(8, 20, 13, 0.22);
+    background: var(--sau-sidebar-control-active);
+    color: var(--sau-sidebar-active-ink);
+    box-shadow: 0 2px 8px rgba(63, 51, 21, 0.12);
   }
 }
 
@@ -301,10 +301,10 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
   width: 40px;
   height: 40px;
   justify-self: center;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--sau-sidebar-line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #eef3ef;
+  background: var(--sau-sidebar-control);
+  color: var(--sau-sidebar-ink);
   cursor: pointer;
 }
 
@@ -380,7 +380,7 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
 
   .app-sidebar.mobile-open {
     transform: translateX(0);
-    box-shadow: 18px 0 50px rgba(8, 20, 13, 0.28);
+    box-shadow: 18px 0 50px rgba(25, 27, 31, 0.24);
   }
 
   .sidebar-backdrop {
@@ -389,7 +389,7 @@ watch(() => route.path, () => { mobileSidebarOpen.value = false })
     inset: 0;
     display: block;
     border: 0;
-    background: rgba(12, 18, 15, 0.42);
+    background: rgba(25, 27, 31, 0.42);
   }
 
   .topbar {
