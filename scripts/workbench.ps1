@@ -84,12 +84,32 @@ function Test-ExpectedProcess([int]$ProcessId, [string]$ExpectedMarker) {
   return ([string]$process.CommandLine) -like "*$ExpectedMarker*"
 }
 
+function Stop-KnownPortConflict([int]$ProcessId, [string]$Port) {
+  $process = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+  if (-not $process) { return $false }
+  $commandLine = [string]$process.CommandLine
+  # The OpenCLI Admin frontend used to default to 5174. It is now configured for 5175,
+  # but an older dev process may still be running from that directory.
+  $knownConflict = $commandLine -like '*D:\ai-coding\自媒体内容拆解\frontend*' -and $commandLine -like '*vite*'
+  if (-not $knownConflict) { return $false }
+  Write-Host ("[handoff] stopping known OpenCLI Admin frontend on port {0} (PID {1}); it now uses 5175." -f $Port, $ProcessId)
+  & taskkill.exe /PID $ProcessId /T /F *> $null
+  Start-Sleep -Milliseconds 500
+  return $true
+}
+
 function Start-ServiceProcess([string]$Name, [int]$Port, [string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory, [string]$ExpectedMarker) {
   $existingOwner = Get-PortOwner $Port
   if ($existingOwner) {
     if (-not (Test-ExpectedProcess $existingOwner $ExpectedMarker)) {
+      if ($Port -eq 5174 -and (Stop-KnownPortConflict $existingOwner $Port)) {
+        $existingOwner = Get-PortOwner $Port
+      }
+    }
+    if ($existingOwner -and -not (Test-ExpectedProcess $existingOwner $ExpectedMarker)) {
       throw ("{0} 端口 {1} 已被其他项目占用（PID {2}）。请先停止占用该端口的程序后再启动工作台。" -f $Name, $Port, $existingOwner)
     }
+    if (-not $existingOwner) { return Start-ServiceProcess $Name $Port $FilePath $Arguments $WorkingDirectory $ExpectedMarker }
     Write-Host ("[ready] {0} already listens on {1} (PID {2})" -f $Name, $Port, $existingOwner)
     $previousRecord = @(Read-State) | Where-Object {
       $_.name -eq $Name -and
@@ -116,6 +136,9 @@ function Start-ServiceProcess([string]$Name, [int]$Port, [string]$FilePath, [str
   if (-not $owner) {
     $detail = if (Test-Path -LiteralPath $stderr) { (Get-Content -LiteralPath $stderr -Tail 12 -ErrorAction SilentlyContinue) -join "`n" } else { '' }
     throw ("{0} failed to listen on port {1}. {2}" -f $Name, $Port, $detail)
+  }
+  if (-not (Test-ExpectedProcess $owner $ExpectedMarker)) {
+    throw ("{0} failed to claim port {1}; it was claimed by another process (PID {2})." -f $Name, $Port, $owner)
   }
   Write-Host ("[started] {0} http://127.0.0.1:{1} (PID {2})" -f $Name, $Port, $owner)
   return @{ name = $Name; port = $Port; ownerPid = $owner; launcherPid = $process.Id; managed = $true }
