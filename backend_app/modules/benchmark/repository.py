@@ -584,6 +584,12 @@ def update_manual_video_metadata(db_path, video_id, metadata):
     title = str(metadata.get("title") or metadata.get("description") or "").strip()
     cover = str(metadata.get("thumbnail") or metadata.get("cover_url") or "").strip()
     uploader = str(metadata.get("uploader") or metadata.get("author") or "").strip()
+    metrics = {
+        "like_count": metadata.get("likeCount") if metadata.get("likeCount") is not None else metadata.get("like_count"),
+        "comment_count": metadata.get("commentCount") if metadata.get("commentCount") is not None else metadata.get("comment_count"),
+        "share_count": metadata.get("shareCount") if metadata.get("shareCount") is not None else metadata.get("share_count"),
+        "collect_count": metadata.get("collectCount") if metadata.get("collectCount") is not None else metadata.get("collect_count"),
+    }
     with sqlite3.connect(Path(db_path)) as conn:
         row = conn.execute("SELECT raw_data FROM douyin_benchmark_videos WHERE id = ? AND source_type = 'manual'", (video_id,)).fetchone()
         if not row:
@@ -595,7 +601,17 @@ def update_manual_video_metadata(db_path, video_id, metadata):
         raw_data.update({"manual": True, "inspection": metadata})
         if uploader:
             raw_data["manual_uploader"] = uploader
-        conn.execute("UPDATE douyin_benchmark_videos SET title = COALESCE(NULLIF(?, ''), title), cover_url = COALESCE(NULLIF(?, ''), cover_url), raw_data = ? WHERE id = ?", (title, cover, json.dumps(raw_data, ensure_ascii=False), video_id))
+        conn.execute(
+            "UPDATE douyin_benchmark_videos SET title = COALESCE(NULLIF(?, ''), title), "
+            "cover_url = COALESCE(NULLIF(?, ''), cover_url), "
+            "like_count = COALESCE(NULLIF(?, ''), like_count), "
+            "comment_count = COALESCE(NULLIF(?, ''), comment_count), "
+            "share_count = COALESCE(NULLIF(?, ''), share_count), "
+            "collect_count = COALESCE(NULLIF(?, ''), collect_count), raw_data = ? WHERE id = ?",
+            (title, cover, metrics["like_count"], metrics["comment_count"],
+             metrics["share_count"], metrics["collect_count"],
+             json.dumps(raw_data, ensure_ascii=False), video_id),
+        )
         conn.commit()
     return True
 

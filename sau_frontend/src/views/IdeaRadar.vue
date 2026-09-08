@@ -313,7 +313,7 @@
   </div>
   <el-dialog v-model="manualDialog" title="手动添加作品" width="520px">
     <el-form @submit.prevent="addManualVideo">
-      <el-form-item label="作品链接"><el-input v-model="manualUrl" placeholder="粘贴抖音作品链接或完整分享文本" /></el-form-item>
+      <el-form-item label="作品链接"><el-input v-model="manualUrl" placeholder="粘贴任意 yt-dlp 支持的平台链接或完整分享文本" /></el-form-item>
       <p class="dialog-note">添加后会进入“手动添加”，不参与中位数和入选倍数判断；选择作品后可下载原视频并用本地 Whisper 转写。</p>
     </el-form>
     <template #footer><el-button @click="manualDialog=false">取消</el-button><el-button type="primary" :loading="addingManual" @click="addManualVideo">添加作品</el-button></template>

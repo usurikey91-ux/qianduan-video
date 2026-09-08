@@ -2850,8 +2850,22 @@ def analyze_idea_radar_video(video_id):
         payload = request.get_json(silent=True) or {}
         # 爆款拆解不依赖账号定位；保留空值只是兼容旧数据库字段。
         target_direction = ""
-        if not load_idea_radar_video(video_id):
+        video = load_idea_radar_video(video_id)
+        if not video:
             return jsonify({"code": 404, "msg": "作品不存在", "data": None}), 404
+        # Refresh public yt-dlp metadata for manually curated works before
+        # starting transcription, so metrics are available even for records
+        # created before metadata persistence was added.
+        if video.get("source_type") == "manual":
+            try:
+                inspection = video_jiexi_client.inspect(
+                    video.get("video_url"), settings=load_runtime_settings()
+                )
+                benchmark_repository.update_manual_video_metadata(
+                    get_db_path(), video_id, inspection
+                )
+            except Exception as exc:
+                backend_log(f"manual metadata refresh skipped: {exc}")
         task = start_idea_radar_pipeline(
             video_id,
             target_direction,

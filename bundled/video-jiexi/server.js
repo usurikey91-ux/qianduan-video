@@ -423,6 +423,11 @@ function projectInfo(info) {
     title: info.title || '未命名视频',
     description: info.description || '',
     uploader: info.uploader || info.channel || info.creator || '',
+    viewCount: info.view_count ?? info.viewCount ?? null,
+    likeCount: info.like_count ?? info.likeCount ?? null,
+    commentCount: info.comment_count ?? info.commentCount ?? null,
+    shareCount: info.repost_count ?? info.share_count ?? info.shareCount ?? null,
+    collectCount: info.favourite_count ?? info.favorite_count ?? info.collect_count ?? info.collectCount ?? null,
     duration: info.duration || null,
     thumbnail: info.thumbnail || '',
     webpageUrl: info.webpage_url || '',
@@ -573,6 +578,11 @@ function parseDouyinRenderedHtml(html, webpageUrl = '') {
         title: detail.desc || detail.itemTitle || '抖音图文',
         description: detail.desc || '',
         uploader: detail.authorInfo?.nickname || detail.author?.nickname || '',
+        viewCount: detail.statistics?.playCount ?? detail.statistics?.play_count ?? detail.playCount ?? null,
+        likeCount: detail.statistics?.diggCount ?? detail.statistics?.digg_count ?? detail.likeCount ?? null,
+        commentCount: detail.statistics?.commentCount ?? detail.statistics?.comment_count ?? null,
+        shareCount: detail.statistics?.shareCount ?? detail.statistics?.share_count ?? null,
+        collectCount: detail.statistics?.collectCount ?? detail.statistics?.collect_count ?? detail.statistics?.favoriteCount ?? null,
         duration: null,
         thumbnail: images[0].url,
         webpageUrl,
@@ -615,6 +625,14 @@ function projectDouyinWebDetail(detail, webpageUrl = '') {
   const id = String(detail.aweme_id || detail.awemeId || detail.group_id || detail.groupId || '');
   const title = detail.desc || detail.item_title || detail.itemTitle || '抖音作品';
   const uploader = detail.author?.nickname || detail.authorInfo?.nickname || '';
+  const statistics = detail.statistics || detail.stats || detail.statisticsInfo || {};
+  const publicMetrics = {
+    viewCount: statistics.play_count ?? statistics.playCount ?? detail.play_count ?? detail.playCount ?? null,
+    likeCount: statistics.digg_count ?? statistics.diggCount ?? statistics.like_count ?? statistics.likeCount ?? detail.digg_count ?? detail.like_count ?? null,
+    commentCount: statistics.comment_count ?? statistics.commentCount ?? detail.comment_count ?? null,
+    shareCount: statistics.share_count ?? statistics.shareCount ?? detail.share_count ?? null,
+    collectCount: statistics.collect_count ?? statistics.collectCount ?? statistics.favorite_count ?? statistics.favoriteCount ?? detail.collect_count ?? detail.favorite_count ?? null
+  };
   const rawImages = Array.isArray(detail.images) ? detail.images : [];
 
   if (rawImages.length) {
@@ -633,6 +651,7 @@ function projectDouyinWebDetail(detail, webpageUrl = '') {
         title,
         description: detail.desc || '',
         uploader,
+        ...publicMetrics,
         duration: null,
         thumbnail: images[0].url,
         webpageUrl,
@@ -682,6 +701,7 @@ function projectDouyinWebDetail(detail, webpageUrl = '') {
     title,
     description: detail.desc || '',
     uploader,
+    ...publicMetrics,
     duration: durationMs ? durationMs / 1000 : null,
     thumbnail: douyinResourceUrls(video.cover || video.origin_cover || video.dynamic_cover).map(trustedCollectionImageUrl).find(Boolean) || '',
     webpageUrl,
@@ -1129,6 +1149,11 @@ function projectYtDlpCollection(rawInfo) {
     title: rawInfo.title || '混合媒体作品',
     description: rawInfo.description || '',
     uploader: rawInfo.uploader || rawInfo.channel || rawInfo.creator || '',
+    viewCount: rawInfo.view_count ?? rawInfo.viewCount ?? null,
+    likeCount: rawInfo.like_count ?? rawInfo.likeCount ?? null,
+    commentCount: rawInfo.comment_count ?? rawInfo.commentCount ?? null,
+    shareCount: rawInfo.repost_count ?? rawInfo.share_count ?? rawInfo.shareCount ?? null,
+    collectCount: rawInfo.favourite_count ?? rawInfo.favorite_count ?? rawInfo.collect_count ?? rawInfo.collectCount ?? null,
     duration: null,
     thumbnail: firstPreview,
     webpageUrl: rawInfo.webpage_url || '',
@@ -1171,7 +1196,19 @@ async function inspectWithYtDlp(url, browser) {
 
 async function inspectUrl(url, browser) {
   const douyinMedia = await inspectDouyinPublicMedia(url).catch(() => null);
-  if (douyinMedia) return { info: douyinMedia, browser: '' };
+  if (douyinMedia) {
+    // The browser parser is more reliable for Douyin media URLs, while yt-dlp
+    // may expose public counters that are absent from the rendered page.
+    try {
+      const ytInfo = await inspectWithYtDlp(url, browser);
+      for (const field of ['viewCount', 'likeCount', 'commentCount', 'shareCount', 'collectCount']) {
+        if (ytInfo?.[field] !== undefined && ytInfo[field] !== null) douyinMedia[field] = ytInfo[field];
+      }
+    } catch {
+      // Keep the browser result when yt-dlp cannot read the page.
+    }
+    return { info: douyinMedia, browser: '' };
+  }
   const xiaohongshuMedia = await inspectXiaohongshuPublicMedia(url).catch(() => null);
   if (xiaohongshuMedia) return { info: xiaohongshuMedia, browser: '' };
 
