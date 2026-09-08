@@ -244,7 +244,7 @@
           </div>
         </template>
 
-        <div v-else-if="taskState && taskState.status !== 'idle'" class="task-state-card">
+        <div v-else-if="taskState && !['idle', 'success', 'complete'].includes(taskState.status)" class="task-state-card">
           <template v-if="taskState.status === 'failed'">
             <el-result icon="error" title="视频解析失败" :sub-title="taskState.error_message || '请重新解析'">
               <template #extra>

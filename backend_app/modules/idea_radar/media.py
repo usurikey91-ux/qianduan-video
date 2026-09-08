@@ -253,4 +253,9 @@ def clean_transcript_text(text):
     value = re.sub(r"[ \t]+", " ", str(text or ""))
     value = re.sub(r"\s*\n\s*", "\n", value)
     value = re.sub(r"([。！？!?，,])\1+", r"\1", value)
+    try:
+        from opencc import OpenCC
+        value = OpenCC("t2s").convert(value)
+    except ImportError:
+        pass
     return value.strip()
