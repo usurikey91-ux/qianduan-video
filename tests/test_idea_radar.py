@@ -99,6 +99,20 @@ class IdeaRadarPipelineTests(unittest.TestCase):
             sau_backend.normalize_manual_video_url(value),
         )
 
+    def test_manual_links_accept_any_http_platform_supported_by_ytdlp(self):
+        self.assertEqual(
+            "https://www.youtube.com/watch?v=abc123",
+            sau_backend.normalize_manual_video_url(
+                "复制链接 https://www.youtube.com/watch?v=abc123"
+            ),
+        )
+        self.assertEqual(
+            "https://www.bilibili.com/video/BV1xx411c7mD",
+            sau_backend.normalize_manual_video_url(
+                "https://www.bilibili.com/video/BV1xx411c7mD"
+            ),
+        )
+
     def test_manual_share_text_without_url_is_rejected(self):
         self.assertEqual("", sau_backend.normalize_manual_video_url("复制打开抖音看看作品"))
 

@@ -321,7 +321,7 @@
   <el-dialog v-model="repairDialog" title="更新作品链接" width="520px">
     <el-form @submit.prevent="repairManualVideo">
       <el-form-item label="作品链接">
-        <el-input v-model="repairUrl" placeholder="粘贴包含 https://v.douyin.com/... 的完整分享文本" />
+        <el-input v-model="repairUrl" placeholder="粘贴包含 http:// 或 https:// 的完整分享文本（支持 yt-dlp 平台）" />
       </el-form-item>
       <p class="dialog-note">更新后会清除本条作品的失败记录，并立即在本机重新下载和转写。</p>
     </el-form>

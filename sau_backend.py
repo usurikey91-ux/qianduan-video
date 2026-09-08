@@ -1530,10 +1530,10 @@ def transcribe_idea_radar_media(media_path, progress_callback=None):
 
 
 def download_idea_radar_media(video_url, work_dir, progress_callback=None):
-    """Use the reusable video-jiexi adapter first, then keep the local fallback."""
+    """Use the reusable yt-dlp-backed adapter for any supported platform."""
     if not normalize_manual_video_url(video_url):
         raise ValueError(
-            "作品链接无效，请重新粘贴包含 https://v.douyin.com/... 的完整分享文本"
+            "作品链接无效，请粘贴包含 http:// 或 https:// 的完整分享文本"
         )
     settings = load_runtime_settings()
     if video_jiexi_client.base_url(settings):
@@ -2747,10 +2747,8 @@ def normalize_manual_video_url(value):
     if not match:
         return ''
     url = match.group(0).rstrip('，。！？；：,!?;:)）]】').split('#')[0]
-    hostname = (urlparse(url).hostname or '').lower()
-    if hostname not in {'douyin.com', 'iesdouyin.com'} and not hostname.endswith(
-        ('.douyin.com', '.iesdouyin.com')
-    ):
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in {'http', 'https'} or not parsed.hostname:
         return ''
     return url
 
