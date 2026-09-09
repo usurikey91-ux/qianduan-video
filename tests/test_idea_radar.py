@@ -7,6 +7,8 @@ import sau_backend
 from backend_app.modules.benchmark import repository as benchmark_repository
 from backend_app.modules.idea_radar import repository as idea_radar_repository
 from backend_app.modules.idea_radar.jobs import IdeaRadarJobRegistry
+from backend_app.modules.idea_radar.pipeline import run_pipeline
+from backend_app.modules.idea_radar.media import assemble_transcript_text
 
 
 class IdeaRadarPipelineTests(unittest.TestCase):
@@ -213,6 +215,14 @@ class IdeaRadarPipelineTests(unittest.TestCase):
         cleaned = sau_backend.clean_transcript_text("第一句。。。。\n  第二句！！！")
         self.assertEqual("第一句。\n第二句！", cleaned)
 
+    def test_assemble_transcript_text_restores_pause_punctuation(self):
+        text = assemble_transcript_text([
+            {"start": 0, "end": 1, "text": "这是第一段"},
+            {"start": 1.3, "end": 2, "text": "这是第二段"},
+            {"start": 3.3, "end": 4, "text": "这是第三段。"},
+        ])
+        self.assertEqual("这是第一段，这是第二段。这是第三段。", text)
+
     @patch.object(sau_backend, "update_idea_radar_transcript")
     @patch.object(sau_backend, "run_codex_structured")
     @patch.object(sau_backend, "transcribe_idea_radar_media")
@@ -264,6 +274,43 @@ class IdeaRadarPipelineTests(unittest.TestCase):
         final_update = update_transcript.call_args_list[-1].kwargs
         self.assertEqual("success", final_update["status"])
         self.assertEqual("transcript", final_update["analysis_basis"])
+
+    def test_pipeline_uses_platform_subtitle_before_download_or_whisper(self):
+        updates = []
+        calls = []
+
+        class Registry:
+            def is_cancelled(self, _video_id):
+                return False
+
+            def finish(self, _video_id):
+                pass
+
+        run_pipeline(
+            8, "", transcribe_only=True,
+            load_video=lambda _video_id: {
+                "id": 8, "title": "B 站作品",
+                "video_url": "https://www.bilibili.com/video/BV1Xqt16XEet",
+            },
+            get_transcript=lambda _video_id: None,
+            update_progress=lambda *args, **kwargs: updates.append((args, kwargs)),
+            download_video=lambda *_args, **_kwargs: calls.append("download"),
+            transcribe_media=lambda *_args, **_kwargs: calls.append("whisper"),
+            fetch_platform_transcript=lambda _url: ({
+                "text": "这是 B 站官方字幕正文。",
+                "segments": [{"start": 0, "end": 2, "text": "这是 B 站官方字幕正文。"}],
+                "engine": "bilibili-official-subtitle",
+                "language": "zh", "duration": 2,
+            }, "bilibili-official-subtitle"),
+            clean_transcript=lambda text: text, build_prompt=lambda *_args: "",
+            schema_factory=dict, run_structured=lambda *_args: {},
+            get_agent_model=dict, parse_metric_number=lambda _value: 0, registry=Registry(),
+        )
+
+        self.assertEqual([], calls)
+        subtitle_update = next(kwargs for _args, kwargs in updates if kwargs.get("engine"))
+        self.assertEqual("bilibili-official-subtitle", subtitle_update["engine"])
+        self.assertEqual("success", updates[-1][1]["status"])
 
 
 if __name__ == "__main__":

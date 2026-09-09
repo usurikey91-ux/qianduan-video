@@ -37,6 +37,7 @@ def run_pipeline(
     update_progress,
     download_video,
     transcribe_media,
+    fetch_platform_transcript=None,
     clean_transcript,
     build_prompt,
     schema_factory,
@@ -52,64 +53,76 @@ def run_pipeline(
         cached = get_transcript(video_id) or {}
         transcript = "" if force_transcription else (cached.get("cleaned_transcript") or "")
         if not transcript:
-            update_progress(
-                video_id, "downloading", 3, "正在准备下载视频", analysis_basis="title_only",
-                target_direction=target_direction, radar_json=None, error_message=None,
-            )
-            with tempfile.TemporaryDirectory(prefix=f"idea-radar-{video_id}-") as work_dir:
-                download_progress = {"value": -1}
-
-                def report_download(percent, message):
-                    overall = min(35, 5 + float(percent or 0) * 0.3)
-                    rounded = int(round(overall))
-                    if rounded <= download_progress["value"] and percent < 100:
-                        return
-                    download_progress["value"] = rounded
-                    update_progress(video_id, "downloading", overall, message)
-
-                media_path = download_video(
-                    video.get("video_url"), work_dir, progress_callback=report_download
-                )
-                media_path_obj = Path(media_path)
-                media_size_text = ""
-                if media_path_obj.exists():
-                    media_size_mb = media_path_obj.stat().st_size / (1024 * 1024)
-                    media_size_text = f"（{media_size_mb:.1f} MB）"
-                update_progress(
-                    video_id, "transcribing", 38,
-                    f"视频下载完成{media_size_text}，正在启动语音识别",
-                )
-                transcription_progress = {"value": -1}
-
-                def report_transcription(percent, message, details=None):
-                    details = details or {}
-                    overall = min(78, 40 + float(percent or 0) * 0.38)
-                    rounded = int(round(overall))
-                    if rounded <= transcription_progress["value"] and percent < 100:
-                        return
-                    transcription_progress["value"] = rounded
-                    duration = float(details.get("duration") or 0)
-                    position = float(details.get("position") or 0)
-                    detail_message = message
-                    if duration and position:
-                        detail_message = f"{message} / 共 {int(duration)} 秒"
-                    update_progress(video_id, "transcribing", overall, detail_message)
-
-                transcript_data, model = transcribe_media(
-                    media_path, progress_callback=report_transcription
-                )
-            raw_transcript = (transcript_data.get("text") or "").strip()
-            transcript = clean_transcript(raw_transcript)
+            platform_transcript = None
+            if fetch_platform_transcript:
+                try:
+                    platform_transcript = fetch_platform_transcript(video.get("video_url"))
+                except Exception as exc:
+                    update_progress(video_id, "downloading", 3, f"平台字幕读取失败，准备专用转写：{str(exc)[:160]}")
+            if platform_transcript:
+                transcript_data, model = platform_transcript
+                raw_transcript = (transcript_data.get("text") or "").strip()
+                transcript = clean_transcript(raw_transcript)
+                if transcript:
+                    update_progress(
+                        video_id, "analyzing", 80, "已读取平台官方字幕，正在整理完整文案",
+                        analysis_basis="transcript", raw_transcript=raw_transcript,
+                        cleaned_transcript=transcript, segments=transcript_data.get("segments") or [],
+                        engine=transcript_data.get("engine"), model=model,
+                        language=transcript_data.get("language") or "zh",
+                        duration=transcript_data.get("duration") or 0, error_message=None,
+                    )
             if not transcript:
-                raise RuntimeError("Whisper 没有识别出有效视频文案")
-            update_progress(
-                video_id, "analyzing", 80, "转写完成，正在整理完整文案",
-                analysis_basis="transcript",
-                raw_transcript=raw_transcript, cleaned_transcript=transcript,
-                segments=transcript_data.get("segments") or [], engine=transcript_data.get("engine"),
-                model=model, language=transcript_data.get("language") or "zh",
-                duration=transcript_data.get("duration") or 0, error_message=None,
-            )
+                update_progress(
+                    video_id, "downloading", 3, "正在准备下载视频", analysis_basis="title_only",
+                    target_direction=target_direction, radar_json=None, error_message=None,
+                )
+                with tempfile.TemporaryDirectory(prefix=f"idea-radar-{video_id}-") as work_dir:
+                    download_progress = {"value": -1}
+
+                    def report_download(percent, message):
+                        overall = min(35, 5 + float(percent or 0) * 0.3)
+                        rounded = int(round(overall))
+                        if rounded <= download_progress["value"] and percent < 100:
+                            return
+                        download_progress["value"] = rounded
+                        update_progress(video_id, "downloading", overall, message)
+
+                    media_path = download_video(video.get("video_url"), work_dir, progress_callback=report_download)
+                    media_path_obj = Path(media_path)
+                    media_size_text = ""
+                    if media_path_obj.exists():
+                        media_size_text = f"（{media_path_obj.stat().st_size / (1024 * 1024):.1f} MB）"
+                    update_progress(video_id, "transcribing", 38, f"视频下载完成{media_size_text}，正在启动语音识别")
+                    transcription_progress = {"value": -1}
+
+                    def report_transcription(percent, message, details=None):
+                        details = details or {}
+                        overall = min(78, 40 + float(percent or 0) * 0.38)
+                        rounded = int(round(overall))
+                        if rounded <= transcription_progress["value"] and percent < 100:
+                            return
+                        transcription_progress["value"] = rounded
+                        duration = float(details.get("duration") or 0)
+                        position = float(details.get("position") or 0)
+                        detail_message = message
+                        if duration and position:
+                            detail_message = f"{message} / 共 {int(duration)} 秒"
+                        update_progress(video_id, "transcribing", overall, detail_message)
+
+                    transcript_data, model = transcribe_media(media_path, progress_callback=report_transcription)
+                raw_transcript = (transcript_data.get("text") or "").strip()
+                transcript = clean_transcript(raw_transcript)
+                if not transcript:
+                    raise RuntimeError("Whisper 没有识别出有效视频文案")
+                update_progress(
+                    video_id, "analyzing", 80, "转写完成，正在整理完整文案",
+                    analysis_basis="transcript", raw_transcript=raw_transcript,
+                    cleaned_transcript=transcript, segments=transcript_data.get("segments") or [],
+                    engine=transcript_data.get("engine"), model=model,
+                    language=transcript_data.get("language") or "zh",
+                    duration=transcript_data.get("duration") or 0, error_message=None,
+                )
         else:
             update_progress(
                 video_id, "analyzing", 80, "已读取历史转写，正在准备观点分析",

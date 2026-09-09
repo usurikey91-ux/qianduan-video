@@ -1838,7 +1838,9 @@ const server = http.createServer(async (request, response) => {
 
 if (require.main === module) {
   server.listen(PORT, HOST, () => {
-    console.log(`Video Jiexi is running at http://${HOST}:${PORT}`);
+    const address = server.address();
+    const actualPort = address && typeof address === 'object' ? address.port : PORT;
+    console.log(`Video Jiexi is running at http://${HOST}:${actualPort}`);
     console.log(`Downloads: ${DOWNLOAD_DIR}`);
   });
 }

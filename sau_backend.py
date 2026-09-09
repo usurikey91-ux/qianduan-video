@@ -1536,6 +1536,10 @@ def download_idea_radar_media(video_url, work_dir, progress_callback=None):
             "作品链接无效，请粘贴包含 http:// 或 https:// 的完整分享文本"
         )
     settings = load_runtime_settings()
+    if idea_radar_media.is_bilibili_video_url(video_url):
+        return idea_radar_media.download_bilibili_video(
+            video_url, work_dir, progress_callback=progress_callback, log=backend_log
+        )
     if video_jiexi_client.base_url(settings):
         try:
             if progress_callback:
@@ -1899,6 +1903,9 @@ def run_idea_radar_pipeline(video_id, target_direction, force_transcription=Fals
         update_progress=update_idea_radar_progress,
         download_video=download_idea_radar_media,
         transcribe_media=transcribe_idea_radar_media,
+        fetch_platform_transcript=lambda video_url: idea_radar_media.fetch_bilibili_official_subtitle(
+            video_url, log=backend_log
+        ),
         clean_transcript=clean_transcript_text,
         build_prompt=build_transcript_radar_prompt,
         schema_factory=get_transcript_radar_schema,
@@ -2749,6 +2756,8 @@ def normalize_manual_video_url(value):
     url = match.group(0).rstrip('，。！？；：,!?;:)）]】').split('#')[0]
     parsed = urlparse(url)
     if parsed.scheme.lower() not in {'http', 'https'} or not parsed.hostname:
+        return ''
+    if re.fullmatch(r'\d+(?:\.\d+)?', parsed.hostname):
         return ''
     return url
 

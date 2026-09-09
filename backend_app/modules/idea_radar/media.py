@@ -2,11 +2,185 @@ import asyncio
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
 _CUDA_DLL_HANDLES = []
+
+
+def extract_bilibili_bvid(value):
+    """Extract a Bilibili BV id from a URL or pasted share text."""
+    match = re.search(r"(?<![A-Za-z0-9])(BV[0-9A-Za-z]{10})(?![A-Za-z0-9])", str(value or ""))
+    return match.group(1) if match else ""
+
+
+def is_bilibili_video_url(value):
+    text = str(value or "").lower()
+    return bool(extract_bilibili_bvid(value)) or "bilibili.com/video/" in text or "b23.tv/" in text
+
+
+def assemble_transcript_text(segments):
+    """Join timed ASR/caption segments with readable Chinese punctuation."""
+    items = [item for item in (segments or []) if str(item.get("text") or "").strip()]
+    if not items:
+        return ""
+    punctuation = "。！？!?；;:：,，、"
+    parts = []
+    for index, item in enumerate(items):
+        text = re.sub(r"\s+", "", str(item.get("text") or "").strip())
+        if not text:
+            continue
+        parts.append(text)
+        if index >= len(items) - 1:
+            continue
+        if text[-1] in punctuation:
+            continue
+        current_end = float(item.get("end") or 0)
+        next_start = float(items[index + 1].get("start") or current_end)
+        gap = max(0, next_start - current_end)
+        next_text = re.sub(r"\s+", "", str(items[index + 1].get("text") or "").strip())
+        sentence_starters = (
+            "给大家", "大家", "这个", "那个", "如果", "但是", "不过", "而且", "所以",
+            "比如", "然后", "首先", "最后", "其实", "当然", "现在", "我们", "你可以",
+        )
+        semantic_break = bool(next_text.startswith(sentence_starters)) and (
+            text[-1] in "啊呀呢吧啦了" or len(text) >= 18
+        )
+        parts.append("。" if gap >= 1.0 or semantic_break else "，")
+    result = "".join(parts).strip()
+    if result and result[-1] not in punctuation:
+        result += "。"
+    return result
+
+
+def _resolve_opencli():
+    configured = os.environ.get("OPENCLI_PATH", "").strip()
+    if configured and Path(configured).exists():
+        return configured
+    return shutil.which("opencli") or shutil.which("opencli.cmd")
+
+
+def _extract_json_payload(text):
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text or ""):
+        if char not in "[{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[index:])
+            return value
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def fetch_bilibili_official_subtitle(video_url, progress_callback=None, log=None):
+    """Read the official timed captions through the logged-in OpenCLI browser session."""
+    if not is_bilibili_video_url(video_url):
+        return None
+    bvid = extract_bilibili_bvid(video_url)
+    cli = _resolve_opencli()
+    if not bvid or not cli:
+        return None
+    if progress_callback:
+        progress_callback(8, "正在读取 B 站官方字幕")
+    command = [cli, "bilibili", "subtitle", bvid, "--window", "background",
+               "--site-session", "persistent", "-f", "json"]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=False, timeout=180)
+    except Exception as exc:
+        if log:
+            log(f"bilibili official subtitle unavailable: {exc}")
+        return None
+    stdout = completed.stdout or b""
+    stderr = completed.stderr or b""
+    try:
+        stdout_text = stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        stdout_text = stdout.decode("gb18030", errors="replace")
+    try:
+        stderr_text = stderr.decode("utf-8")
+    except UnicodeDecodeError:
+        stderr_text = stderr.decode("gb18030", errors="replace")
+    payload = _extract_json_payload(stdout_text)
+    if completed.returncode != 0 or not isinstance(payload, list):
+        if log:
+            log(f"bilibili official subtitle unavailable: {(stderr_text or stdout_text)[-500:]}")
+        return None
+    segments = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("content") or item.get("text") or "").strip()
+        if not text:
+            continue
+        def seconds(value):
+            match = re.search(r"[0-9]+(?:\.[0-9]+)?", str(value or "0"))
+            return round(float(match.group(0)), 3) if match else 0.0
+        segments.append({"start": seconds(item.get("from") or item.get("start")),
+                         "end": seconds(item.get("to") or item.get("end")),
+                         "text": text})
+    if not segments:
+        return None
+    duration = max((segment["end"] for segment in segments), default=0)
+    if progress_callback:
+        progress_callback(100, f"B 站官方字幕读取完成（{len(segments)} 段）")
+    return {"engine": "bilibili-official-subtitle", "language": "zh",
+            "duration": duration, "text": assemble_transcript_text(segments),
+            "segments": segments}, "bilibili-official-subtitle"
+
+
+def download_bilibili_video(video_url, work_dir, progress_callback=None, log=None):
+    """Download a public Bilibili MP4 via the official playurl API, bypassing yt-dlp."""
+    bvid = extract_bilibili_bvid(video_url)
+    if not bvid:
+        raise ValueError("不是有效的 B 站视频链接")
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36",
+               "Referer": "https://www.bilibili.com/"}
+    def request_json(url):
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if payload.get("code") != 0:
+            raise RuntimeError(payload.get("message") or f"B 站接口错误 {payload.get('code')}")
+        return payload.get("data") or {}
+    try:
+        view = request_json(f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}")
+        pages = view.get("pages") or []
+        cid = (pages[0].get("cid") if pages else None) or view.get("cid")
+        if not cid:
+            raise RuntimeError("B 站视频没有可用分 P")
+        play = request_json(f"https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={cid}&qn=64&fnval=0&fnver=0&fourk=1")
+        urls = [item.get("url") for item in (play.get("durl") or []) if item.get("url")]
+        if not urls:
+            raise RuntimeError("B 站播放接口没有返回可下载地址")
+        target = Path(work_dir) / "source.mp4"
+        if progress_callback:
+            progress_callback(10, "已获取 B 站公开播放地址，正在下载媒体")
+        request = urllib.request.Request(urls[0], headers=headers)
+        with urllib.request.urlopen(request, timeout=180) as response, target.open("wb") as output:
+            total = int(response.headers.get("Content-Length") or 0)
+            downloaded = 0
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                output.write(chunk)
+                downloaded += len(chunk)
+                if progress_callback:
+                    percent = downloaded * 100 / total if total else 50
+                    progress_callback(min(99, percent), f"B 站媒体下载 {percent:.1f}%")
+        if progress_callback:
+            progress_callback(100, "B 站媒体下载完成")
+        return target
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+        if log:
+            log(f"bilibili API download failed: {exc}")
+        raise RuntimeError(f"B 站专用媒体下载失败：{exc}") from exc
 
 
 def configure_local_cuda_runtime():
@@ -244,7 +418,7 @@ def transcribe_media(media_path, progress_callback=None, log=None):
         "engine": "faster-whisper",
         "language": getattr(info, "language", language),
         "duration": round(duration, 3),
-        "text": "".join(text_parts).strip(),
+        "text": assemble_transcript_text(items) or "".join(text_parts).strip(),
         "segments": items,
     }, model
 
