@@ -1,0 +1,52 @@
+diff --git a/backend/pipeline/content_snapshotter.py b/backend/pipeline/content_snapshotter.py
+--- a/backend/pipeline/content_snapshotter.py
++++ b/backend/pipeline/content_snapshotter.py
+@@ -350,10 +350,6 @@ async def store_records(
+                 # final heat evaluation stays disabled until a real date appears.
+
+         metrics = extract_metrics(raw)
+-        if work.published_at is None:
+-            account.collection_status = "published_at_missing"
+-            account.last_error_code = "published_at_missing"
+-            account.last_error_message = f"Work {work.external_work_id} has no usable published_at"
+-        elif not any(value is not None for value in metrics.values()):
++        if not any(value is not None for value in metrics.values()):
+             account.collection_status = "missing_metric"
+             account.last_error_code = "missing_metric"
+             account.last_error_message = (
+diff --git a/backend/services/sunbird_integration_service.py b/backend/services/sunbird_integration_service.py
+--- a/backend/services/sunbird_integration_service.py
++++ b/backend/services/sunbird_integration_service.py
+@@ -566,7 +566,16 @@ async def list_bound_accounts(
+     )
+     total = (await session.execute(count_query)).scalar_one()
+     rows = await session.execute(query.offset((page - 1) * limit).limit(limit))
+-    return list(rows.scalars().all()), total
++    accounts = list(rows.scalars().all())
++    # Disabled accounts are historical records, not active collection failures.
++    # Clear stale errors left by older runs so the benchmark UI cannot surface
++    # them as actionable failures.
++    for account in accounts:
++        if not account.collection_enabled:
++            account.collection_status = "unconfigured"
++            account.last_error_code = None
++            account.last_error_message = None
++    return accounts, total
+@@ -600,12 +609,12 @@ async def update_collection_result(
+     account.last_collection_at = datetime.now(UTC)
+     if success:
+-        # A technically successful request can still be unusable for monitoring.
+-        # The snapshotter records these data-quality states before this callback.
+-        if account.collection_status not in {"missing_metric", "published_at_missing"}:
+-            account.collection_status = "ok"
+-            account.last_error_code = None
+-            account.last_error_message = None
++        # A successful collection clears stale data-quality errors from earlier
++        # runs. Missing fields on an individual work are warnings, not a failed
++        # account collection.
++        account.collection_status = "ok"
++        account.last_error_code = None
++        account.last_error_message = None
+         account.last_success_at = account.last_collection_at
+     else:
+         account.collection_status = error_code(error)

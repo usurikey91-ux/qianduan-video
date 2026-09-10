@@ -37,7 +37,7 @@ function Install-PinnedRepository(
   [hashtable]$Definition,
   [string]$Target
 ) {
-  $patches = @($Definition.patch, $Definition.bootstrapPatch) | Where-Object { $_ }
+  $patches = @($Definition.patch, $Definition.bootstrapPatch, $Definition.runtimePatch) | Where-Object { $_ }
   $patchSignature = $patches -join ';'
   $markerPath = Join-Path $Target '.sunbird-managed.json'
   if (Test-Path -LiteralPath $markerPath) {
@@ -158,6 +158,11 @@ Write-Host '  [install] OpenCLI 1.8.6 (project-local)'
 Assert-LastExit 'Failed to install OpenCLI.'
 $OpenCliPath = Join-Path $ToolsRoot 'node_modules\.bin\opencli.cmd'
 if (-not (Test-Path -LiteralPath $OpenCliPath)) { throw "OpenCLI executable was not created: $OpenCliPath" }
+$OpenCliPatch = Join-Path $ProjectRoot 'scripts\patch-opencli.js'
+if (-not (Test-Path -LiteralPath $OpenCliPatch)) { throw "OpenCLI patch script is missing: $OpenCliPatch" }
+Write-Host '  [patch] OpenCLI Douyin monitoring fields'
+& node.exe $OpenCliPatch $ToolsRoot
+Assert-LastExit 'Failed to patch project-local OpenCLI monitoring fields.'
 
 if (-not $SkipVideoJiexi) {
   Install-BundledDirectory 'video-jiexi' $Lock.videoJiexi $VideoRoot

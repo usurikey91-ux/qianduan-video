@@ -11,6 +11,7 @@
     "commit": "b056380ef0b1f227dc5881b84bc422b94a231f9b",
     "patch": "third_party/patches/opencli-admin-b056380.patch",
     "bootstrapPatch": "third_party/patches/opencli-admin-bootstrap.patch",
+    "runtimePatch": "third_party/patches/opencli-admin-failure-state.patch",
     "license": "Apache-2.0"
   },
   "opencli": {
