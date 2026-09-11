@@ -166,9 +166,17 @@
       <div class="fact-grid">
         <el-statistic title="作品数量" :value="works.length" />
         <template v-if="activePlatform === 'douyin'">
-          <el-statistic title="中位曝光" :value="reviewOverview.exposureMedian ?? '-'" group-separator="," />
+          <el-statistic v-if="reviewOverview.exposureMedian !== null" title="中位曝光" :value="reviewOverview.exposureMedian" group-separator="," />
+          <div v-else class="fact-statistic-placeholder">
+            <div class="el-statistic__head">中位曝光</div>
+            <div class="el-statistic__content">-</div>
+          </div>
           <el-statistic title="中位播放" :value="reviewOverview.playMedian" group-separator="," />
-          <el-statistic title="中位5秒完播率" :value="reviewOverview.fiveSecMedian === null ? '-' : reviewOverview.fiveSecMedian * 100" :precision="reviewOverview.fiveSecMedian === null ? 0 : 1" :suffix="reviewOverview.fiveSecMedian === null ? '' : '%'" />
+          <el-statistic v-if="reviewOverview.fiveSecMedian !== null" title="中位5秒完播率" :value="reviewOverview.fiveSecMedian * 100" :precision="1" suffix="%" />
+          <div v-else class="fact-statistic-placeholder">
+            <div class="el-statistic__head">中位5秒完播率</div>
+            <div class="el-statistic__content">-</div>
+          </div>
         </template>
         <template v-else>
           <el-statistic :title="`中位${reviewOverview.primaryLabel}`" :value="reviewOverview.primaryMedian" group-separator="," />
@@ -492,6 +500,10 @@ onMounted(async () => { await loadSources(); await fetchWorks() })
   .result-alert, .preview-block { margin-top: 16px; }
   .preview-summary { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 12px; margin-bottom: 14px; }
   .fact-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; }
+  .fact-statistic-placeholder {
+    .el-statistic__head { color: var(--el-text-color-regular); font-size: 14px; }
+    .el-statistic__content { color: var(--el-text-color-primary); font-size: 28px; line-height: 1.3; }
+  }
   .card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .card-header-actions { display: flex; align-items: center; gap: 12px; }
   .detail-title { font-size: 20px; font-weight: 650; color: var(--sau-ink); margin-bottom: 8px; }
