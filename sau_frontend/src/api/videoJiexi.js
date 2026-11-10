@@ -6,5 +6,10 @@ export const videoJiexiApi = {
   inspect: (url, cookieBrowser = '') => http.post('/integrations/video-jiexi/inspect', { url, cookieBrowser }),
   download: (inspectionId, formatId, kind = 'video') => http.post('/integrations/video-jiexi/download', { inspectionId, formatId, kind }),
   task: (taskId) => http.get(`/integrations/video-jiexi/tasks/${taskId}`),
+  cancel: (taskId) => http.delete(`/integrations/video-jiexi/tasks/${taskId}`),
   importMaterial: (taskId) => http.post('/integrations/video-jiexi/import', { taskId })
+}
+
+export const systemApi = {
+  openUrl: (url) => http.post('/system/open-url', { url })
 }

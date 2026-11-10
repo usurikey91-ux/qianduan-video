@@ -280,8 +280,29 @@ def download_with_ytdlp(video_url, output_dir, cookie_file, progress_callback=No
 async def download_with_playwright(video_url, output_path, storage_state_path=None, progress_callback=None):
     from playwright.async_api import async_playwright
 
+    def browser_executable():
+        configured = os.environ.get("IDEA_RADAR_BROWSER_PATH") or os.environ.get("PLAYWRIGHT_BROWSER_PATH")
+        candidates = [
+            configured,
+            os.environ.get("LOCALAPPDATA", "") + r"\ms-playwright\chromium-1169\chrome-win\chrome.exe",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        ]
+        return next((path for path in candidates if path and Path(path).exists()), None)
+
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
+        executable_path = browser_executable()
+        launch_kwargs = {"headless": True}
+        if executable_path:
+            launch_kwargs["executable_path"] = executable_path
+        try:
+            browser = await playwright.chromium.launch(**launch_kwargs)
+        except Exception as exc:
+            raise RuntimeError(
+                "备用浏览器启动失败。请安装 Playwright Chromium，或设置 IDEA_RADAR_BROWSER_PATH 指向 Chrome/Edge。"
+            ) from exc
         kwargs = {
             "viewport": {"width": 1280, "height": 900},
             "locale": "zh-CN",
@@ -351,8 +372,21 @@ def download_douyin_video(video_url, work_dir, *, base_dir, latest_cookie_file, 
                 video_url, fallback_path, storage_state, progress_callback=progress_callback,
             ))
         except Exception as fallback_error:
+            host = ""
+            try:
+                from urllib.parse import urlparse
+                host = (urlparse(str(video_url)).hostname or "").lower()
+            except Exception:
+                pass
+            if "unsupported url" in str(primary_error).lower():
+                reason = f"当前解析器不支持此链接格式（{host or '未知平台'}）"
+            elif "fresh cookies" in str(primary_error).lower():
+                reason = "平台要求新鲜访问会话，当前公开解析未能取得媒体地址"
+            else:
+                reason = "未能从公开链接取得可下载媒体地址"
             raise RuntimeError(
-                f"yt-dlp: {primary_error}; Playwright: {fallback_error}"
+                f"{reason}。请检查链接是否为平台公开分享链接，或改用该平台生成的标准分享地址。"
+                f"（yt-dlp: {primary_error}; Playwright: {fallback_error}）"
             ) from fallback_error
 
 

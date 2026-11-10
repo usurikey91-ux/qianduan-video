@@ -6,6 +6,14 @@ from pathlib import Path
 from backend_app.modules.benchmark.repository import ensure_tables
 
 
+def _to_simplified(value):
+    try:
+        from opencc import OpenCC
+        return OpenCC("t2s").convert(str(value or ""))
+    except ImportError:
+        return value
+
+
 ALLOWED_TRANSCRIPT_FIELDS = {
     "status", "stage", "analysis_basis", "raw_transcript", "cleaned_transcript",
     "segments", "engine", "model", "language", "duration", "target_direction",
@@ -35,6 +43,14 @@ def parse_transcript(row):
     except Exception:
         item["elapsed_seconds"] = 0
     item["can_retry"] = item.get("status") == "failed"
+    if item.get("cleaned_transcript"):
+        item["cleaned_transcript"] = _to_simplified(item["cleaned_transcript"])
+    if isinstance(item.get("segments"), list):
+        item["segments"] = [
+            {**segment, "text": _to_simplified(segment.get("text"))}
+            if isinstance(segment, dict) else segment
+            for segment in item["segments"]
+        ]
     return item
 
 

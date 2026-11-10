@@ -243,6 +243,7 @@ def bind_account(
         "/integrations/sunbird/accounts",
         payload=payload,
         settings=settings,
+        timeout=60,
     )
     return result if isinstance(result, dict) else {}
 

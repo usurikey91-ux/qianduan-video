@@ -33,8 +33,7 @@ class EmbeddedVideoJiexi:
             node = os.environ.get("VIDEO_JIEXI_NODE") or "node"
             env = os.environ.copy()
             env.update({"HOST": "127.0.0.1", "PORT": "0"})
-            if download_dir:
-                env["DOWNLOAD_DIR"] = str(download_dir)
+            env["DOWNLOAD_DIR"] = str(download_dir or server.parent / "downloads")
             self._process = subprocess.Popen(
                 [node, str(server)],
                 cwd=str(server.parent),

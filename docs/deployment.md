@@ -14,7 +14,7 @@
 
 ## 最小部署
 
-建议先运行 `scripts/setup-local.ps1` 安装工作台核心和内置视频解析；只有需要平台采集时再运行 `scripts/install-connectors.ps1`。安装完成后运行 `scripts/check-workbench.ps1`，可检查 5174、5409、旧 4200 端口、内置解析接口和本地空间占用。
+建议先运行 `scripts/setup-local.ps1` 安装工作台核心和内置视频解析；只有需要平台采集时再运行 `scripts/install-connectors.ps1`。安装完成后运行 `scripts/check-workbench.ps1`，可检查 5174、5409、内置解析接口和本地空间占用。独立 4200 服务不属于工作台的启动或监控范围。
 
 只运行主工作台即可使用基础页面；平台采集连接器按需安装，视频解析已内置在 5409 后端。下载文件只在发布流程中作为临时输入，不要求启用独立素材资产页面。前端生产构建保持 `VITE_API_BASE_URL` 为空，API 使用同源路径，不包含任何开发机地址。
 

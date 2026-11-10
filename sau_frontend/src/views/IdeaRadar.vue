@@ -1,294 +1,179 @@
 <template>
   <div class="idea-radar">
-    <div class="page-header">
-      <div>
-        <h1>入选作品列表</h1>
-        <p>统一管理对标入选与手动添加作品；公开指标、原视频和本地转写分开呈现。</p>
+    <header class="sau-page-head">
+      <span class="sau-page-icon"><el-icon><Tickets /></el-icon></span>
+      <div class="sau-page-title">
+        <h1>入选作品</h1>
+        <p>对标账号里超过入选线的作品，和你手动加进来的，都在这里</p>
       </div>
-      <div class="header-actions">
-        <el-button type="primary" :loading="loadingVideos" @click="fetchVideos">
-          刷新作品
-        </el-button>
-        <el-button @click="manualDialog = true">手动添加</el-button>
+      <div class="sau-page-counts">
+        <span class="sau-badge">总数 {{ videos.length }}</span>
+        <span class="sau-badge is-accent">对标 {{ sourceCounts.benchmark }}</span>
+        <span v-if="freshCount" class="sau-badge is-success">新增 {{ freshCount }}</span>
+      </div>
+      <div class="sau-page-actions">
+        <el-button :icon="Refresh" :loading="loadingVideos" @click="fetchVideos">刷新</el-button>
+        <el-button type="primary" :icon="Plus" @click="manualDialog = true">手动添加</el-button>
+      </div>
+    </header>
+
+    <div class="sau-page-filters">
+      <el-input v-model="keyword" placeholder="搜索标题、账号、话题" clearable :prefix-icon="Search" />
+      <div class="filter-line">
+        <div class="sau-chips">
+          <span class="sau-chip is-label"><el-icon><Filter /></el-icon>来源</span>
+          <button
+            v-for="item in sourceFilterOptions"
+            :key="item.value"
+            type="button"
+            class="sau-chip"
+            :class="{ 'is-active': sourceFilter === item.value }"
+            @click="sourceFilter = item.value"
+          >{{ item.label }} · <em>{{ sourceCounts[item.value] }}</em></button>
+          <span class="chip-divider" />
+          <button
+            v-for="item in dayOptions"
+            :key="item.value"
+            type="button"
+            class="sau-chip"
+            :class="{ 'is-active': selectedDays === item.value }"
+            @click="selectedDays = item.value; fetchVideos()"
+          >{{ item.short }}</button>
+          <button type="button" class="sau-chip" :class="{ 'is-active': showDeleted }" @click="showDeleted = !showDeleted; fetchVideos()">显示已删除</button>
+        </div>
+        <span class="result-count">当前结果 {{ filteredVideos.length }}</span>
       </div>
     </div>
 
-    <div class="radar-layout">
-      <section class="video-panel">
-        <div class="panel-title">
-          <span>入选作品</span>
-          <small>{{ filteredVideos.length }} 条</small>
-        </div>
-        <div class="filter-row">
-          <el-input v-model="keyword" placeholder="搜索标题 / 账号" clearable />
-          <el-segmented v-model="sourceFilter" :options="sourceFilterOptions" />
-          <el-checkbox v-model="showDeleted" @change="fetchVideos">显示已删除</el-checkbox>
-        </div>
-        <div class="time-filter">
-          <div class="time-filter-label">
-            <span>发布时间</span>
-            <strong>{{ selectedDays > 0 ? `近 ${selectedDays} 天` : '不限时间' }}</strong>
-          </div>
-          <el-slider
-            v-model="selectedDays"
-            :min="0"
-            :max="90"
-            :step="5"
-            :marks="{ 0: '不限', 30: '30天', 60: '60天', 90: '90天' }"
-            @change="fetchVideos"
-          />
-        </div>
-
-        <el-scrollbar height="calc(100vh - 230px)" v-loading="loadingVideos">
-          <div
-            v-for="video in filteredVideos"
+    <div v-loading="loadingVideos && !videos.length" class="sau-page-body day-list">
+      <section v-for="group in dayGroups" :key="group.key" class="day">
+        <header class="day-head">
+          <span class="day-name">{{ group.label }}</span>
+          <span class="day-date">{{ group.date }}</span>
+          <span class="day-line" />
+          <span class="day-count">{{ group.items.length }} 条</span>
+        </header>
+        <TransitionGroup name="row" tag="div" class="rows" appear>
+          <article
+            v-for="(video, index) in group.items"
             :key="video.id"
-            class="video-item"
-            :class="{ active: selectedVideo?.id === video.id }"
-            @click="selectVideo(video)"
-            @keydown.enter="selectVideo(video)"
+            class="row"
+            :class="{ deleted: video.deleted_at, active: detailOpen && selectedVideo?.id === video.id }"
+            :style="{ '--i': index }"
             role="button"
             tabindex="0"
+            @click="openDetail(video)"
+            @keydown.enter="openDetail(video)"
           >
-            <div class="video-meta">
-              <span class="account">{{ video.account_name || '对标账号' }}</span>
-              <span class="likes">
-                <el-tag size="small" :type="video.source_type === 'manual' ? 'info' : 'danger'" effect="plain">{{ video.source_type === 'manual' ? '手动添加' : '对标入选' }}</el-tag>
-                <span v-if="video.source_type !== 'manual'">{{ video.relative_multiple ? `${Number(video.relative_multiple).toFixed(1)}x` : '—' }}</span>
+            <div class="cover" :style="coverStyle(video)">
+              <img v-if="video.cover_url" :src="video.cover_url" alt="" loading="lazy" referrerpolicy="no-referrer">
+              <span v-else>{{ (video.account_name || '作')[0] }}</span>
+            </div>
+            <div class="row-main">
+              <div class="row-top">
+                <span v-if="video.source_type === 'manual'" class="sau-badge">手动添加</span>
+                <span v-else class="sau-badge is-accent">对标 {{ video.relative_multiple ? `${Number(video.relative_multiple).toFixed(1)}x` : '' }}</span>
+                <span v-if="isFresh(video)" class="sau-badge is-success">新</span>
+                <span v-if="video.deleted_at" class="sau-badge is-danger">已删除</span>
+                <span class="row-title">{{ splitTitle(video.title).text || '待抓取作品' }}</span>
+              </div>
+              <div class="row-meta">
+                <span class="row-account">{{ video.account_name || (video.source_type === 'manual' ? '手动添加' : '对标账号') }}</span>
+                <span v-if="publishedLabel(video)">发布 {{ publishedLabel(video) }}</span>
+                <span v-if="Number(video.like_count)">赞 {{ formatNumber(video.like_count) }}</span>
+                <span v-for="tag in splitTitle(video.title).tags.slice(0, 3)" :key="tag" class="row-tag">#{{ tag }}</span>
+              </div>
+            </div>
+            <div class="row-side">
+              <span class="row-time">{{ timeLabel(video) }}</span>
+              <span class="row-actions" @click.stop>
+                <el-button size="small" @click="openOriginal(video.video_url)">原作品</el-button>
+                <el-button size="small" @click="openVideoInspector(video)">解析视频</el-button>
+                <el-button v-if="video.deleted_at" size="small" @click="restoreVideo(video)">恢复</el-button>
+                <el-button v-else size="small" type="danger" plain @click="deleteVideo(video)">移出</el-button>
               </span>
             </div>
-            <div class="video-title-row">
-              <div class="video-title">{{ video.title }}</div>
-              <el-button
-                class="delete-video-button"
-                size="small"
-                text
-                type="danger"
-                @click.stop="video.deleted_at ? restoreVideo(video) : deleteVideo(video)"
-              >{{ video.deleted_at ? '恢复' : '删除' }}</el-button>
-            </div>
-          </div>
-          <el-empty v-if="!loadingVideos && filteredVideos.length === 0" description="暂无入选作品" />
-        </el-scrollbar>
+          </article>
+        </TransitionGroup>
       </section>
-
-      <section class="result-panel" v-loading="analyzing">
-        <div v-if="selectedVideo" class="manual-facts">
-          <div class="source-bar">
-            <div>
-              <span class="source-account">{{ selectedVideo.account_name || (selectedVideo.source_type === 'manual' ? '手动添加' : '对标账号') }}</span>
-              <h2>{{ selectedVideo.title || '待抓取作品' }}</h2>
-            </div>
-            <div class="source-actions">
-              <el-tag :type="selectedVideo.source_type === 'manual' ? 'info' : 'danger'" effect="plain">{{ selectedVideo.source_type === 'manual' ? '手动添加' : '对标入选' }}</el-tag>
-              <el-link :href="selectedVideo.video_url" target="_blank" type="primary">打开原作品</el-link>
-              <el-button size="small" type="primary" @click="openVideoInspector">解析视频</el-button>
-            </div>
+      <el-empty v-if="!loadingVideos && !dayGroups.length" :description="videos.length ? '没有符合条件的作品' : '暂无入选作品'" :image-size="90" />
+    </div>
+  </div>
+  <el-drawer
+    v-model="detailOpen"
+    size="min(760px, 94vw)"
+    :with-header="false"
+    class="detail-drawer"
+  >
+    <section class="result-panel" v-loading="analyzing">
+      <div v-if="selectedVideo" class="manual-facts">
+        <div class="source-bar">
+          <div>
+            <span class="source-account">{{ selectedVideo.account_name || (selectedVideo.source_type === 'manual' ? '手动添加' : '对标账号') }}</span>
+            <h2>{{ splitTitle(selectedVideo.title).text || '待抓取作品' }}</h2>
           </div>
-          <div class="metric-strip">
-            <div><span>点赞</span><strong>{{ formatNumber(selectedVideo.like_count) }}</strong></div>
-            <div><span>评论</span><strong>{{ formatNumber(selectedVideo.comment_count) }}</strong></div>
-            <div><span>收藏</span><strong>{{ formatNumber(selectedVideo.collect_count) }}</strong></div>
-            <div><span>分享</span><strong>{{ formatNumber(selectedVideo.share_count) }}</strong></div>
-            <div v-if="selectedVideo.source_type !== 'manual'"><span>相对倍数</span><strong>{{ selectedVideo.relative_multiple ? `${Number(selectedVideo.relative_multiple).toFixed(1)}x` : '未提供' }}</strong></div>
-          </div>
-          <div v-if="taskState?.cleaned_transcript" class="section-block">
-            <div class="section-label">原视频本地转写</div>
-            <div class="transcript-box">{{ taskState.cleaned_transcript }}</div>
+          <div class="source-actions">
+            <el-tag :type="selectedVideo.source_type === 'manual' ? 'info' : 'success'" effect="plain" round>{{ selectedVideo.source_type === 'manual' ? '手动添加' : '对标入选' }}</el-tag>
+            <el-link :href="selectedVideo.video_url" @click.prevent="openOriginal(selectedVideo.video_url)" type="primary">打开原作品</el-link>
+            <el-button size="small" type="primary" @click="openVideoInspector(selectedVideo)">解析视频</el-button>
           </div>
         </div>
-        <template v-if="radar && !FACTS_ONLY_MODE">
-          <div class="source-bar">
-            <div>
-              <span class="source-account">{{ radar.source.account_name }}</span>
-              <h2>{{ radar.viral_theme }}</h2>
-            </div>
-            <div class="source-actions">
-              <el-tag v-if="selectedVideo?.hot_status" type="danger" effect="plain">已入选</el-tag>
-              <el-link :href="radar.source.video_url" target="_blank" type="primary">打开原作品</el-link>
-              <el-button size="small" type="primary" @click="openVideoInspector">解析视频</el-button>
-            </div>
+        <div class="metric-strip">
+          <div><span>点赞</span><strong>{{ formatNumber(selectedVideo.like_count) }}</strong></div>
+          <div><span>评论</span><strong>{{ formatNumber(selectedVideo.comment_count) }}</strong></div>
+          <div><span>收藏</span><strong>{{ formatNumber(selectedVideo.collect_count) }}</strong></div>
+          <div><span>分享</span><strong>{{ formatNumber(selectedVideo.share_count) }}</strong></div>
+          <div v-if="selectedVideo.source_type !== 'manual'"><span>相对倍数</span><strong>{{ selectedVideo.relative_multiple ? `${Number(selectedVideo.relative_multiple).toFixed(1)}x` : '未提供' }}</strong></div>
+        </div>
+        <div v-if="taskState?.cleaned_transcript" class="section-block">
+          <div class="section-label">原视频本地转写</div>
+          <div class="transcript-box">{{ taskState.cleaned_transcript }}</div>
+        </div>
+      </div>
+      <template v-if="radar && !FACTS_ONLY_MODE">
+        <div class="source-bar">
+          <div>
+            <span class="source-account">{{ radar.source.account_name }}</span>
+            <h2>{{ radar.viral_theme }}</h2>
           </div>
-
-          <div class="metric-strip">
-            <div><span>点赞</span><strong>{{ formatNumber(selectedVideo?.like_count || radar.source.like_count) }}</strong></div>
-            <div><span>评论</span><strong>{{ formatNumber(selectedVideo?.comment_count) }}</strong></div>
-            <div><span>收藏</span><strong>{{ formatNumber(selectedVideo?.collect_count) }}</strong></div>
-            <div><span>分享</span><strong>{{ formatNumber(selectedVideo?.share_count) }}</strong></div>
-            <div><span>相对倍数</span><strong>{{ selectedVideo?.relative_multiple ? `${Number(selectedVideo.relative_multiple).toFixed(1)}x` : '未提供' }}</strong></div>
+          <div class="source-actions">
+            <el-tag v-if="selectedVideo?.hot_status" type="success" effect="plain" round>已入选</el-tag>
+            <el-link :href="radar.source.video_url" @click.prevent="openOriginal(radar.source.video_url)" type="primary">打开原作品</el-link>
+            <el-button size="small" type="primary" @click="openVideoInspector(selectedVideo)">解析视频</el-button>
           </div>
+        </div>
 
-          <div class="formula">{{ radar.formula }}</div>
+        <div class="metric-strip">
+          <div><span>点赞</span><strong>{{ formatNumber(selectedVideo?.like_count || radar.source.like_count) }}</strong></div>
+          <div><span>评论</span><strong>{{ formatNumber(selectedVideo?.comment_count) }}</strong></div>
+          <div><span>收藏</span><strong>{{ formatNumber(selectedVideo?.collect_count) }}</strong></div>
+          <div><span>分享</span><strong>{{ formatNumber(selectedVideo?.share_count) }}</strong></div>
+          <div><span>相对倍数</span><strong>{{ selectedVideo?.relative_multiple ? `${Number(selectedVideo.relative_multiple).toFixed(1)}x` : '未提供' }}</strong></div>
+        </div>
 
-          <div class="analysis-basis">
-            <el-tag type="success" effect="plain">根据视频完整文案分析</el-tag>
-            <span v-if="taskState?.engine">{{ taskState.engine }} · {{ taskState.model }}</span>
-            <el-tag v-if="radar.agent_model" type="primary" effect="plain">
-              AI：{{ radar.agent_model.name }} · {{ radar.agent_model.model }}
-            </el-tag>
-          </div>
-          <el-alert
-            v-if="radar.ai_status === 'unavailable'"
-            title="本次 AI 调用未成功，当前展示本地规则降级结果。"
-            :description="`模型配置仍然存在；请检查中转站响应或点击重新解析。${radar.ai_error ? `\n${radar.ai_error}` : ''}`"
-            type="warning"
-            :closable="false"
-            show-icon
-          />
+        <div class="formula">{{ radar.formula }}</div>
 
-          <el-collapse v-if="taskState?.progress_log?.length" class="completion-log">
-            <el-collapse-item
-              :title="`本次处理日志 · 用时 ${formatDuration(taskState.elapsed_seconds)}`"
-              name="task-log"
-            >
-              <div class="log-list">
-                <div
-                  v-for="(entry, index) in taskState.progress_log"
-                  :key="`${entry.time}-${index}`"
-                  class="log-entry"
-                >
-                  <span class="log-time">{{ entry.time }}</span>
-                  <span class="log-percent">{{ entry.percent }}%</span>
-                  <span class="log-message">{{ entry.message }}</span>
-                </div>
-              </div>
-            </el-collapse-item>
-          </el-collapse>
+        <div class="analysis-basis">
+          <el-tag type="success" effect="plain">根据视频完整文案分析</el-tag>
+          <span v-if="taskState?.engine">{{ taskState.engine }} · {{ taskState.model }}</span>
+          <el-tag v-if="radar.agent_model" type="primary" effect="plain">
+            AI：{{ radar.agent_model.name }} · {{ radar.agent_model.model }}
+          </el-tag>
+        </div>
+        <el-alert
+          v-if="radar.ai_status === 'unavailable'"
+          title="本次 AI 调用未成功，当前展示本地规则降级结果。"
+          :description="`模型配置仍然存在；请检查中转站响应或点击重新解析。${radar.ai_error ? `\n${radar.ai_error}` : ''}`"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
 
-          <div v-if="taskState?.cleaned_transcript" class="section-block">
-            <el-collapse>
-              <el-collapse-item title="查看视频转写文案" name="transcript">
-                <div class="transcript-box">{{ taskState.cleaned_transcript }}</div>
-              </el-collapse-item>
-            </el-collapse>
-          </div>
-
-          <div v-if="radar.content_breakdown" class="section-block breakdown-card">
-            <div class="section-label">正文拆解</div>
-            <h3>{{ radar.content_breakdown.summary }}</h3>
-            <p><strong>目标人群：</strong>{{ radar.content_breakdown.target_audience }}</p>
-            <p><strong>开头钩子：</strong>{{ radar.content_breakdown.hook }}</p>
-            <p><strong>核心观点：</strong>{{ radar.content_breakdown.core_viewpoint }}</p>
-            <div class="breakdown-grid">
-              <div>
-                <strong>内容结构</strong>
-                <ul><li v-for="item in radar.content_breakdown.structure" :key="item">{{ item }}</li></ul>
-              </div>
-              <div>
-                <strong>机会链路</strong>
-                <ul><li v-for="item in radar.content_breakdown.opportunity_chain" :key="item">{{ item }}</li></ul>
-              </div>
-            </div>
-          </div>
-
-          <div class="section-block">
-            <div class="section-label">反常识观点</div>
-            <div class="big-viewpoint">{{ radar.contrarian_viewpoint }}</div>
-          </div>
-
-          <div class="insight-grid">
-            <div class="insight-box">
-              <div class="section-label">人群焦虑</div>
-              <ul>
-                <li v-for="item in radar.audience_anxieties" :key="item">{{ item }}</li>
-              </ul>
-            </div>
-            <div class="insight-box">
-              <div class="section-label">可迁移方向</div>
-              <ul>
-                <li v-for="item in radar.migration_angles" :key="item">{{ item }}</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="section-block">
-            <div class="section-label">证据类型</div>
-            <div class="tag-row">
-              <el-tag v-for="item in radar.evidence_types" :key="item" effect="plain">
-                {{ item }}
-              </el-tag>
-            </div>
-          </div>
-
-          <div class="section-block">
-            <div class="section-label">三个参考性二创方案</div>
-            <div v-if="radar.adaptation_variants?.length" class="adaptation-list">
-              <article v-for="(variant, index) in radar.adaptation_variants" :key="`${variant.level}-${index}`" class="adaptation-card">
-                <div class="adaptation-heading"><el-tag size="small">{{ variant.level }}</el-tag><strong>{{ variant.title }}</strong></div>
-                <p><b>保留：</b>{{ variant.what_to_keep }}</p>
-                <p><b>改变：</b>{{ variant.what_to_change }}</p>
-                <p><b>大纲：</b>{{ variant.script_outline }}</p>
-              </article>
-            </div>
-            <div v-else class="empty-note">当前分析结果没有返回三个改编方案，请重试。</div>
-          </div>
-
-          <div class="section-block">
-            <div class="section-label">对应选题标题</div>
-            <div class="title-list">
-              <div v-for="(title, index) in radar.recommended_titles" :key="title" class="title-item">
-                <span>{{ index + 1 }}</span>
-                <strong>{{ title }}</strong>
-              </div>
-            </div>
-          </div>
-
-          <div class="section-block">
-            <div class="section-label">口播开头</div>
-            <pre class="script-box">{{ radar.opening_script }}</pre>
-          </div>
-
-          <div v-if="radar.complete_script || radar.personalized_script" class="section-block">
-            <div class="section-label">完整可修改脚本</div>
-            <pre class="script-box">{{ radar.complete_script || radar.personalized_script }}</pre>
-          </div>
-        </template>
-
-        <div v-else-if="taskState && !['idle', 'success', 'complete'].includes(taskState.status)" class="task-state-card">
-          <template v-if="taskState.status === 'failed'">
-            <el-result icon="error" title="视频解析失败" :sub-title="taskState.error_message || '请重新解析'">
-              <template #extra>
-                <el-space>
-                  <el-button type="primary" @click="retrySelectedVideo">重新解析</el-button>
-                  <el-button
-                    v-if="selectedVideo?.source_type === 'manual'"
-                    @click="repairDialog = true"
-                  >更新链接</el-button>
-                </el-space>
-              </template>
-            </el-result>
-            <el-alert
-              v-if="taskState.analysis_basis === 'title_only'"
-              title="尚未获得视频正文，当前不会生成完整拆解。"
-              type="warning"
-              :closable="false"
-            />
-          </template>
-          <template v-else>
-            <div class="progress-header">
-              <div>
-                <div class="progress-stage">{{ stageLabel }}</div>
-                <div class="progress-message">
-                  {{ taskState.progress_message || '任务正在后台处理' }}
-                </div>
-              </div>
-              <strong>{{ taskProgress }}%</strong>
-            </div>
-            <el-progress
-              :percentage="taskProgress"
-              :stroke-width="12"
-              :show-text="false"
-              striped
-              striped-flow
-            />
-            <div class="progress-meta">
-              <span>已用时 {{ formatDuration(taskState.elapsed_seconds) }}</span>
-              <span v-if="taskState.engine">{{ taskState.engine }} · {{ taskState.model }}</span>
-            </div>
-          </template>
-
-          <div v-if="taskState.progress_log?.length" class="task-log">
-            <div class="task-log-title">运行日志</div>
+        <el-collapse v-if="taskState?.progress_log?.length" class="completion-log">
+          <el-collapse-item
+            :title="`本次处理日志 · 用时 ${formatDuration(taskState.elapsed_seconds)}`"
+            name="task-log"
+          >
             <div class="log-list">
               <div
                 v-for="(entry, index) in taskState.progress_log"
@@ -300,17 +185,164 @@
                 <span class="log-message">{{ entry.message }}</span>
               </div>
             </div>
+          </el-collapse-item>
+        </el-collapse>
+
+        <div v-if="taskState?.cleaned_transcript" class="section-block">
+          <el-collapse>
+            <el-collapse-item title="查看视频转写文案" name="transcript">
+              <div class="transcript-box">{{ taskState.cleaned_transcript }}</div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <div v-if="radar.content_breakdown" class="section-block breakdown-card">
+          <div class="section-label">正文拆解</div>
+          <h3>{{ radar.content_breakdown.summary }}</h3>
+          <p><strong>目标人群：</strong>{{ radar.content_breakdown.target_audience }}</p>
+          <p><strong>开头钩子：</strong>{{ radar.content_breakdown.hook }}</p>
+          <p><strong>核心观点：</strong>{{ radar.content_breakdown.core_viewpoint }}</p>
+          <div class="breakdown-grid">
+            <div>
+              <strong>内容结构</strong>
+              <ul><li v-for="item in radar.content_breakdown.structure" :key="item">{{ item }}</li></ul>
+            </div>
+            <div>
+              <strong>机会链路</strong>
+              <ul><li v-for="item in radar.content_breakdown.opportunity_chain" :key="item">{{ item }}</li></ul>
+            </div>
           </div>
         </div>
 
-        <el-empty
-          v-else-if="!analyzing"
-          description="选择一条对标作品查看公开事实"
-          :image-size="110"
-        />
-      </section>
-    </div>
-  </div>
+        <div class="section-block">
+          <div class="section-label">反常识观点</div>
+          <div class="big-viewpoint">{{ radar.contrarian_viewpoint }}</div>
+        </div>
+
+        <div class="insight-grid">
+          <div class="insight-box">
+            <div class="section-label">人群焦虑</div>
+            <ul>
+              <li v-for="item in radar.audience_anxieties" :key="item">{{ item }}</li>
+            </ul>
+          </div>
+          <div class="insight-box">
+            <div class="section-label">可迁移方向</div>
+            <ul>
+              <li v-for="item in radar.migration_angles" :key="item">{{ item }}</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-label">证据类型</div>
+          <div class="tag-row">
+            <el-tag v-for="item in radar.evidence_types" :key="item" effect="plain">
+              {{ item }}
+            </el-tag>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-label">三个参考性二创方案</div>
+          <div v-if="radar.adaptation_variants?.length" class="adaptation-list">
+            <article v-for="(variant, index) in radar.adaptation_variants" :key="`${variant.level}-${index}`" class="adaptation-card">
+              <div class="adaptation-heading"><el-tag size="small">{{ variant.level }}</el-tag><strong>{{ variant.title }}</strong></div>
+              <p><b>保留：</b>{{ variant.what_to_keep }}</p>
+              <p><b>改变：</b>{{ variant.what_to_change }}</p>
+              <p><b>大纲：</b>{{ variant.script_outline }}</p>
+            </article>
+          </div>
+          <div v-else class="empty-note">当前分析结果没有返回三个改编方案，请重试。</div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-label">对应选题标题</div>
+          <div class="title-list">
+            <div v-for="(title, index) in radar.recommended_titles" :key="title" class="title-item">
+              <span>{{ index + 1 }}</span>
+              <strong>{{ title }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-label">口播开头</div>
+          <pre class="script-box">{{ radar.opening_script }}</pre>
+        </div>
+
+        <div v-if="radar.complete_script || radar.personalized_script" class="section-block">
+          <div class="section-label">完整可修改脚本</div>
+          <pre class="script-box">{{ radar.complete_script || radar.personalized_script }}</pre>
+        </div>
+      </template>
+
+      <div v-else-if="taskState && !['idle', 'success', 'complete'].includes(taskState.status)" class="task-state-card">
+        <template v-if="taskState.status === 'failed'">
+          <el-result icon="error" title="视频解析失败" :sub-title="taskState.error_message || '请重新解析'">
+            <template #extra>
+              <el-space>
+                <el-button type="primary" @click="retrySelectedVideo">重新解析</el-button>
+                <el-button
+                  v-if="selectedVideo?.source_type === 'manual'"
+                  @click="repairDialog = true"
+                >更新链接</el-button>
+              </el-space>
+            </template>
+          </el-result>
+          <el-alert
+            v-if="taskState.analysis_basis === 'title_only'"
+            title="尚未获得视频正文，当前不会生成完整拆解。"
+            type="warning"
+            :closable="false"
+          />
+        </template>
+        <template v-else>
+          <div class="progress-header">
+            <div>
+              <div class="progress-stage">{{ stageLabel }}</div>
+              <div class="progress-message">
+                {{ taskState.progress_message || '任务正在后台处理' }}
+              </div>
+            </div>
+            <strong>{{ taskProgress }}%</strong>
+          </div>
+          <el-progress
+            :percentage="taskProgress"
+            :stroke-width="12"
+            :show-text="false"
+            striped
+            striped-flow
+          />
+          <div class="progress-meta">
+            <span>已用时 {{ formatDuration(taskState.elapsed_seconds) }}</span>
+            <span v-if="taskState.engine">{{ taskState.engine }} · {{ taskState.model }}</span>
+          </div>
+        </template>
+
+        <div v-if="taskState.progress_log?.length" class="task-log">
+          <div class="task-log-title">运行日志</div>
+          <div class="log-list">
+            <div
+              v-for="(entry, index) in taskState.progress_log"
+              :key="`${entry.time}-${index}`"
+              class="log-entry"
+            >
+              <span class="log-time">{{ entry.time }}</span>
+              <span class="log-percent">{{ entry.percent }}%</span>
+              <span class="log-message">{{ entry.message }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <el-empty
+        v-else-if="!analyzing"
+        description="选择一条对标作品查看公开事实"
+        :image-size="110"
+      />
+    </section>
+  </el-drawer>
   <el-dialog v-model="manualDialog" title="手动添加作品" width="520px">
     <el-form @submit.prevent="addManualVideo">
       <el-form-item label="作品链接"><el-input v-model="manualUrl" placeholder="粘贴任意 yt-dlp 支持的平台链接或完整分享文本" /></el-form-item>
@@ -334,8 +366,10 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { Filter, Plus, Refresh, Search, Tickets } from '@element-plus/icons-vue'
 import { benchmarkApi } from '@/api/benchmark'
+import { systemApi } from '@/api/videoJiexi'
 import { useRouter } from 'vue-router'
 
 const videos = ref([])
@@ -358,6 +392,15 @@ const repairUrl = ref('')
 const repairingManual = ref(false)
 const savedDays = Number(localStorage.getItem('ideaRadarDays') || 0)
 const selectedDays = ref(Number.isFinite(savedDays) ? Math.min(90, Math.max(0, savedDays)) : 0)
+const dayOptions = computed(() => {
+  const values = [0, 7, 30, 90]
+  if (!values.includes(selectedDays.value)) values.push(selectedDays.value)
+  return values.sort((a, b) => a - b).map((value) => ({ value, label: value ? `近 ${value} 天发布` : '不限发布时间', short: value ? `近 ${value} 天` : '不限时间' }))
+})
+const detailOpen = ref(false)
+// 上次离开本页的时间；此后入选的作品标记为新增。
+const LAST_SEEN_KEY = 'ideaRadarLastSeenAt'
+const lastSeenAt = Number(localStorage.getItem(LAST_SEEN_KEY) || 0)
 const loadingVideos = ref(false)
 const analyzing = ref(false)
 const FACTS_ONLY_MODE = true
@@ -383,6 +426,92 @@ const filteredVideos = computed(() => {
     if (!q) return true
     return `${video.title || ''} ${video.account_name || ''}`.toLowerCase().includes(q)
   })
+})
+
+// 后端时间不带时区时按 UTC 存储（SQLite CURRENT_TIMESTAMP），与后端解析规则保持一致。
+const parseTime = (value) => {
+  if (!value) return null
+  const text = String(value).trim().replace(' ', 'T')
+  const date = new Date(/(Z|[+-]\d{2}:?\d{2})$/.test(text) ? text : `${text}Z`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const rawData = (video) => {
+  try { return JSON.parse(video.raw_data || '{}') || {} } catch { return {} }
+}
+
+const publishedAt = (video) => {
+  const raw = rawData(video)
+  return parseTime(raw.monitor_work?.published_at || raw.published_at)
+}
+
+const pad = (n) => String(n).padStart(2, '0')
+const dayKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+const WEEKDAYS = '日一二三四五六'
+
+const dayGroups = computed(() => {
+  const today = new Date()
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const groups = new Map()
+  const sorted = [...filteredVideos.value].sort((a, b) =>
+    (parseTime(b.created_at)?.getTime() || 0) - (parseTime(a.created_at)?.getTime() || 0) || b.id - a.id)
+  for (const video of sorted) {
+    const entered = parseTime(video.created_at)
+    const key = entered ? dayKey(entered) : 'unknown'
+    if (!groups.has(key)) {
+      let label = '入选时间未知'
+      let date = ''
+      if (entered) {
+        const startOfDay = new Date(entered.getFullYear(), entered.getMonth(), entered.getDate()).getTime()
+        const diff = Math.round((todayStart - startOfDay) / 86400000)
+        label = diff === 0 ? '今天' : diff === 1 ? '昨天' : diff < 7 ? `${diff} 天前` : `${entered.getMonth() + 1}月${entered.getDate()}日`
+        date = `${entered.getMonth() + 1}月${entered.getDate()}日 · 周${WEEKDAYS[entered.getDay()]}`
+        if (entered.getFullYear() !== today.getFullYear()) date = `${entered.getFullYear()}年${date}`
+      }
+      groups.set(key, { key, label, date, items: [] })
+    }
+    groups.get(key).items.push(video)
+  }
+  return [...groups.values()]
+})
+
+const isFresh = (video) => Boolean(lastSeenAt) && (parseTime(video.created_at)?.getTime() || 0) > lastSeenAt
+const freshCount = computed(() => videos.value.filter((video) => !video.deleted_at && isFresh(video)).length)
+
+const timeLabel = (video) => {
+  const entered = parseTime(video.created_at)
+  return entered ? `${pad(entered.getHours())}:${pad(entered.getMinutes())}` : ''
+}
+
+const publishedLabel = (video) => {
+  const date = publishedAt(video)
+  if (!date) return ''
+  const year = date.getFullYear() !== new Date().getFullYear() ? `${date.getFullYear()}年` : ''
+  return `${year}${date.getMonth() + 1}月${date.getDate()}日`
+}
+
+// 抖音标题常带一串话题标签；正文和标签拆开显示，正文为空时用标签兜底。
+const splitTitle = (title) => {
+  const text = String(title || '')
+  const tags = [...text.matchAll(/#([^#\s]+)/g)].map((m) => m[1])
+  const body = text.replace(/#[^#\s]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return { text: body || tags.join(' · '), tags: body ? [...new Set(tags)] : [] }
+}
+
+const COVER_TINTS = ['#c9a27a, #8c6845', '#9aa58a, #5f6b4e', '#a3b2bb, #627580', '#c49a8a, #87594a', '#b2a2c4, #6e5f85', '#cdb489, #8e7547']
+const coverStyle = (video) => {
+  if (video.cover_url) return {}
+  const seed = [...String(video.account_name || video.id)].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
+  return { background: `linear-gradient(160deg, ${COVER_TINTS[seed % COVER_TINTS.length]})` }
+}
+
+const sourceCounts = computed(() => {
+  const counts = { all: 0, benchmark: 0, manual: 0 }
+  for (const video of videos.value) {
+    counts.all += 1
+    counts[video.source_type === 'manual' ? 'manual' : 'benchmark'] += 1
+  }
+  return counts
 })
 
 watch(selectedDays, (value) => {
@@ -413,12 +542,7 @@ const fetchVideos = async () => {
     const res = await benchmarkApi.getIdeaRadarVideos(100, selectedDays.value, showDeleted.value)
     videos.value = res.data || []
     if (selectedVideo.value && !videos.value.some((video) => video.id === selectedVideo.value.id)) {
-      selectedVideo.value = null
-      radar.value = null
-      taskState.value = null
-    }
-    if (!selectedVideo.value && videos.value.length) {
-      await selectVideo(videos.value[0])
+      closeDetail()
     }
   } catch (error) {
     console.error('获取对标作品失败:', error)
@@ -453,28 +577,12 @@ const addManualVideo = async () => {
 }
 
 const deleteVideo = async (video) => {
-  try {
-    await ElMessageBox.confirm(
-      `删除后会同时清理这条作品的本地转写、分析和运行记录。确定删除“${video.title || '待抓取作品'}”吗？`,
-      '删除作品',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
   const wasSelected = selectedVideo.value?.id === video.id
   try {
     await benchmarkApi.deleteIdeaRadarVideo(video.id)
     videos.value = videos.value.filter((item) => item.id !== video.id)
-    if (wasSelected) {
-      stopPolling()
-      selectionToken += 1
-      selectedVideo.value = null
-      radar.value = null
-      taskState.value = null
-      if (videos.value.length) await selectVideo(videos.value[0])
-    }
-    ElMessage.success('作品已删除')
+    if (wasSelected) closeDetail()
+    ElMessage.success('作品已移出')
   } catch (error) {
     ElMessage.error(error?.message || '删除作品失败')
   }
@@ -584,8 +692,31 @@ const startPolling = (videoId, token) => {
   }, 2000)
 }
 
-const openVideoInspector = () => {
-  const sourceUrl = radar.value?.source?.video_url || selectedVideo.value?.video_url
+const openDetail = (video) => {
+  detailOpen.value = true
+  if (selectedVideo.value?.id !== video.id || !taskState.value) selectVideo(video)
+}
+
+const closeDetail = () => {
+  detailOpen.value = false
+  stopPolling()
+  selectionToken += 1
+  selectedVideo.value = null
+  radar.value = null
+  taskState.value = null
+}
+
+// 抽屉收起后不再轮询；再次打开同一条作品会重新读取状态。
+watch(detailOpen, (open) => {
+  if (!open) {
+    stopPolling()
+    selectionToken += 1
+    taskState.value = null
+  }
+})
+
+const openVideoInspector = (video) => {
+  const sourceUrl = video?.video_url || radar.value?.source?.video_url || selectedVideo.value?.video_url
   if (!sourceUrl) {
     ElMessage.warning('原作品链接缺失，暂时无法进入视频解析')
     return
@@ -593,163 +724,203 @@ const openVideoInspector = () => {
   router.push({ path: '/video-inspector', query: { url: sourceUrl } })
 }
 
+const openOriginal = async (url) => {
+  if (!url) {
+    ElMessage.warning('原作品链接缺失')
+    return
+  }
+  try {
+    await systemApi.openUrl(url)
+  } catch (error) {
+    // Keep a browser fallback for remote deployments where the backend cannot launch a local app.
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+}
+
 onMounted(fetchVideos)
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+  stopPolling()
+  localStorage.setItem(LAST_SEEN_KEY, String(Date.now()))
+})
 </script>
 
 <style lang="scss" scoped>
-.idea-radar {
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 20px;
-    align-items: flex-start;
-    margin-bottom: 22px;
-    padding-bottom: 18px;
-    border-bottom: 1px solid var(--sau-line);
+.idea-radar { min-height: 100%; }
 
-    h1 {
-      margin: 0;
-      font-size: 28px;
-      font-weight: 650;
-      color: var(--sau-ink);
-    }
-
-    p {
-      margin: 6px 0 0;
-      color: var(--sau-ink-soft);
-      font-size: 14px;
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
+.filter-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.radar-layout {
+.chip-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--sau-line);
+}
+
+.result-count {
+  flex: none;
+  color: var(--sau-muted);
+  font-size: 11px;
+}
+
+.day-list { min-height: 240px; }
+
+.day { margin-bottom: 22px; }
+
+.day-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 8px;
+}
+
+.day-name { color: var(--sau-ink); font-size: 13px; font-weight: 600; }
+.day-date { color: var(--sau-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.day-line { flex: 1; height: 1px; background: var(--sau-divider); }
+.day-count { color: var(--sau-muted); font-size: 11px; }
+
+.rows {
+  overflow: hidden;
+  border: 1px solid var(--sau-line);
+  border-radius: 12px;
+  background: var(--sau-paper);
+}
+
+.row {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(330px, 420px) minmax(0, 1fr);
-  gap: 16px;
-}
-
-.video-panel,
-.result-panel {
-  background: var(--sau-paper);
-  border: 1px solid var(--sau-line);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(29, 43, 58, 0.055);
-}
-
-.video-panel {
-  padding: 14px;
-}
-
-.panel-title {
-  display: flex;
-  justify-content: space-between;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  font-weight: 650;
-  color: var(--sau-ink);
-  margin-bottom: 12px;
-
-  small {
-    font-weight: 400;
-    color: var(--sau-muted);
-  }
-}
-
-.filter-row {
-  margin-bottom: 12px;
-}
-
-.time-filter {
-  padding: 10px 8px 18px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--sau-line);
-}
-
-.time-filter-label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-  color: var(--sau-ink-soft);
-  font-size: 12px;
-
-  strong {
-    color: var(--sau-cinnabar);
-    font-weight: 650;
-  }
-}
-
-.time-filter :deep(.el-slider) {
-  margin: 0 8px;
-}
-
-.video-item {
-  width: 100%;
-  text-align: left;
-  border: 1px solid var(--sau-line);
-  background: var(--sau-paper);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 10px;
+  padding: 9px 14px 9px 10px;
   cursor: pointer;
-  transition: border-color 0.16s, background-color 0.16s;
+  outline: none;
+  transition: background-color 160ms ease;
+
+  & + & { border-top: 1px solid var(--sau-divider); }
 
   &:hover,
-  &.active {
-    border-color: var(--sau-cinnabar);
-    background: var(--sau-accent-soft);
+  &:focus-visible { background: var(--sau-paper-muted); }
+
+  &.active { background: var(--sau-accent-soft); }
+
+  &.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--sau-accent);
   }
+
+  &.deleted { opacity: 0.5; }
 }
 
-.video-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 12px;
-  margin-bottom: 8px;
-
-  .account {
-    color: var(--sau-ink-soft);
-  }
-
-  .likes {
-    color: var(--sau-cinnabar);
-    font-weight: 650;
-    white-space: nowrap;
-  }
+.row-enter-active {
+  transition: opacity 240ms ease, transform 280ms var(--sau-ease-out);
+  transition-delay: calc(min(var(--i), 10) * 25ms);
 }
+.row-leave-active { transition: opacity 180ms ease; }
+.row-enter-from { opacity: 0; transform: translateY(6px); }
+.row-leave-to { opacity: 0; }
 
-.video-title {
-  color: var(--sau-ink);
+.cover {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 52px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--sau-soft);
+  color: rgba(255, 255, 255, 0.85);
   font-size: 14px;
-  line-height: 1.55;
+  font-weight: 600;
+
+  img { width: 100%; height: 100%; object-fit: cover; }
 }
 
-.video-title-row {
+.row-main { min-width: 0; }
+
+.row-top {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.video-title-row .video-title {
-  flex: 1;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
-.delete-video-button {
-  flex: 0 0 auto;
-  padding: 0 2px;
+.row-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sau-ink);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 5px;
+  color: var(--sau-muted);
+  font-size: 11px;
+}
+
+.row-account { color: var(--sau-ink-soft); }
+.row-tag { color: var(--sau-muted); }
+
+.row-side {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 44px;
+}
+
+.row-time {
+  color: var(--sau-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 120ms ease;
+}
+
+.row-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: flex;
+  gap: 6px;
+  padding-left: 28px;
+  background: linear-gradient(to right, transparent, var(--sau-paper-muted) 24px);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 140ms ease;
+
+  .el-button + .el-button { margin-left: 0; }
+}
+
+.row:hover,
+.row:focus-within {
+  .row-actions { opacity: 1; pointer-events: auto; }
+  .row-time { opacity: 0; }
+}
+
+.row.active .row-actions { background: linear-gradient(to right, transparent, var(--sau-accent-soft) 24px); }
+
+.detail-drawer :deep(.el-drawer__body) { padding: 0; }
+
 .result-panel {
-  min-height: calc(100vh - 165px);
-  padding: 22px;
+  min-height: 100%;
+  padding: 24px;
 }
 
 .source-bar {
@@ -1078,8 +1249,6 @@ onBeforeUnmount(stopPolling)
 }
 
 @media (max-width: 980px) {
-  .idea-radar .page-header,
-  .radar-layout,
   .insight-grid,
   .breakdown-grid {
     grid-template-columns: 1fr;
@@ -1094,5 +1263,19 @@ onBeforeUnmount(stopPolling)
   }
 
   .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .sau-page-counts { display: none; }
+  .filter-line { flex-direction: column; align-items: flex-start; }
+  .row { grid-template-columns: 36px minmax(0, 1fr); }
+  .cover { width: 36px; height: 46px; }
+  .row-side { grid-column: 1 / -1; justify-content: flex-start; }
+  .row-actions { position: static; flex-wrap: wrap; padding-left: 0; background: none; opacity: 1; pointer-events: auto; transform: none; }
+  .row-time { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row, .row-actions, .row-enter-active, .row-leave-active { transition: none; }
 }
 </style>

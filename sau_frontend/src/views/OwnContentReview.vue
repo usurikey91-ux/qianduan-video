@@ -1,33 +1,44 @@
 <template>
   <div class="own-content-review">
-    <div class="page-header">
-      <div>
+    <header class="sau-page-head">
+      <span class="sau-page-icon"><el-icon><TrendCharts /></el-icon></span>
+      <div class="sau-page-title">
         <h1>作品复盘</h1>
-        <p>只读取官方或平台连接器实际返回的数据，用中位数、最高值和作品对比做事实复盘。</p>
-        <ProjectReferences context="review" />
+        <p>只读取官方或平台连接器实际返回的数据，用中位数、最高值和作品对比做事实复盘</p>
       </div>
-        <div class="page-actions">
-          <el-button type="primary" :loading="syncing" @click="syncWorks">同步平台数据</el-button>
-          <el-button :loading="loadingWorks" @click="fetchWorks">刷新数据</el-button>
-        </div>
+      <div class="sau-page-counts">
+        <span class="sau-badge">作品 {{ works.length }}</span>
+        <span v-if="currentSource" class="sau-badge" :class="currentSource.status === 'connected' ? 'is-success' : 'is-accent'">
+          {{ currentSource.status === 'connected' ? '已连接' : currentSource.status === 'sync_available' ? '可直接同步' : '文件导入' }}
+        </span>
+      </div>
+      <div class="sau-page-actions">
+        <el-button :icon="Refresh" :loading="loadingWorks" @click="fetchWorks">刷新</el-button>
+        <el-button type="primary" :loading="syncing" @click="syncWorks">同步平台数据</el-button>
+      </div>
+    </header>
+
+    <div class="sau-page-filters">
+      <div class="sau-chips">
+        <span class="sau-chip is-label"><el-icon><Filter /></el-icon>平台</span>
+        <button
+          v-for="item in platformOptions"
+          :key="item.value"
+          type="button"
+          class="sau-chip"
+          :class="{ 'is-active': activePlatform === item.value }"
+          @click="selectPlatform(item.value)"
+        >{{ item.label }}</button>
+      </div>
+      <ProjectReferences context="review" />
     </div>
 
+    <div class="sau-page-body">
     <el-card shadow="never" class="platform-card">
-      <el-tabs v-model="activePlatform" @tab-change="handlePlatformChange">
-        <el-tab-pane label="抖音作品复盘" name="douyin" />
-        <el-tab-pane label="小红书作品复盘" name="xiaohongshu" />
-      </el-tabs>
-
       <div class="source-status" v-if="currentSource">
         <div>
           <strong>{{ currentSource.label }}</strong>
           <span class="source-connector">数据源：{{ currentSource.connector }}</span>
-        </div>
-        <div class="source-status-actions">
-          <el-tag :type="currentSource.status === 'connected' ? 'success' : 'info'" effect="plain">
-            {{ currentSource.status === 'connected' ? '已连接' : currentSource.status === 'sync_available' ? '可直接同步' : '文件导入模式' }}
-          </el-tag>
-          <el-button size="small" plain @click="router.push('/platform-connections')">管理账号连接</el-button>
         </div>
       </div>
       <p v-if="currentSource?.note" class="source-note">{{ currentSource.note }}</p>
@@ -222,6 +233,8 @@
       <el-empty v-if="!loadingWorks && works.length === 0" :description="`暂无${activePlatform === 'douyin' ? '抖音' : '小红书'}作品数据`" />
     </el-card>
 
+    </div>
+
     <el-dialog v-model="detailVisible" :title="activePlatform === 'douyin' ? '抖音作品详情' : '小红书笔记详情'" width="760px">
       <template v-if="detailWork">
         <div class="detail-title">{{ detailWork.title || '未命名作品' }}</div>
@@ -268,12 +281,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ownContentApi } from '@/api/ownContent'
 import ProjectReferences from '@/components/ProjectReferences.vue'
+import { Filter, Refresh, TrendCharts } from '@element-plus/icons-vue'
 
 const route = useRoute()
-const router = useRouter()
 const requestedPlatform = ['douyin', 'xiaohongshu'].includes(String(route.query.platform))
   ? String(route.query.platform)
   : 'douyin'
@@ -396,6 +409,17 @@ const fetchAccountOverview = async () => {
   }
 }
 
+const platformOptions = [
+  { value: 'douyin', label: '抖音' },
+  { value: 'xiaohongshu', label: '小红书' },
+]
+
+const selectPlatform = (value) => {
+  if (activePlatform.value === value) return
+  activePlatform.value = value
+  handlePlatformChange()
+}
+
 const handlePlatformChange = async () => {
   selectedFile.value = null
   previewData.value = null
@@ -483,13 +507,10 @@ onMounted(async () => { await loadSources(); await fetchWorks() })
 
 <style lang="scss" scoped>
 .own-content-review {
-  .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--sau-line); }
-  .page-actions { display: flex; gap: 10px; }
-  .page-header h1 { margin: 0 0 6px; font-size: 28px; font-weight: 650; color: var(--sau-ink); letter-spacing: -0.02em; }
-  .page-header p { margin: 0; color: var(--sau-ink-soft); font-size: 14px; }
-  .platform-card, .account-overview-card, .fact-review-card, .works-card { margin-bottom: 18px; }
+  min-width: 0;
+  .sau-page-filters :deep(.project-references) { margin: 0; }
+  .platform-card, .account-overview-card, .fact-review-card, .works-card { min-width: 0; margin-bottom: 14px; }
   .source-status { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--sau-paper-muted); border: 1px solid var(--sau-line); border-radius: 8px; }
-  .source-status-actions { display: flex; align-items: center; gap: 10px; }
   .source-connector { margin-left: 12px; color: var(--sau-ink-soft); font-size: 12px; }
   .source-note { margin: 9px 0 14px; color: var(--sau-ink-soft); font-size: 13px; }
   .source-fields { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
@@ -542,6 +563,6 @@ onMounted(async () => { await loadSources(); await fetchWorks() })
   .account-stat small { color: var(--sau-muted); }
   .trend-bars { display: flex; align-items: flex-end; gap: 2px; height: 34px; }
   .trend-bars i { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; background: var(--sau-cinnabar); opacity: .72; }
-  @media (max-width: 760px) { .page-header, .card-header, .card-header-actions, .official-heading { align-items: flex-start; flex-direction: column; gap: 12px; } .fact-grid, .metric-grid, .official-grid, .account-stats-grid, .private-data-layout, .private-metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } .private-data-section, .portrait-section { grid-column: 1 / -1; } }
+  @media (max-width: 760px) { .card-header, .card-header-actions, .official-heading { align-items: flex-start; flex-direction: column; gap: 12px; } .fact-grid, .metric-grid, .official-grid, .account-stats-grid, .private-data-layout, .private-metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } .private-data-section, .portrait-section { grid-column: 1 / -1; } }
 }
 </style>

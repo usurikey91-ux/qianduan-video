@@ -19,7 +19,8 @@ Set-Location -LiteralPath $ProjectRoot
 $Services = @(
   @{ name = 'frontend'; port = 5174; uri = 'http://127.0.0.1:5174/'; expected = '<title>自媒体内容拆解工作台</title>' },
   @{ name = 'backend'; port = 5409; uri = 'http://127.0.0.1:5409/benchmark/douyin/accounts'; expected = '"code":200' },
-  @{ name = 'opencli-admin'; port = 8031; uri = 'http://127.0.0.1:8031/docs'; expected = 'OpenCLI Admin' }
+  @{ name = 'opencli-admin'; port = 8031; uri = 'http://127.0.0.1:8031/docs'; expected = 'OpenCLI Admin' },
+  @{ name = 'collector-browser'; port = 9222; uri = 'http://127.0.0.1:9222/json/version'; expected = 'webSocketDebuggerUrl' }
 )
 
 function Write-Status([string]$Message) {
@@ -46,7 +47,8 @@ function Read-State {
 
 function Test-ServiceHealth($Service) {
   try {
-    $response = Invoke-WebRequest -Uri $Service.uri -UseBasicParsing -TimeoutSec 5
+    $timeout = if ($Service.timeoutSeconds) { [int]$Service.timeoutSeconds } else { 5 }
+    $response = Invoke-WebRequest -Uri $Service.uri -UseBasicParsing -TimeoutSec $timeout
     return $response.StatusCode -eq 200 -and $response.Content.Contains($Service.expected)
   }
   catch {

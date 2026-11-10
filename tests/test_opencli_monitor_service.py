@@ -139,6 +139,7 @@ class OpenCLIAdminServiceTests(unittest.TestCase):
         payload = request.call_args.kwargs["payload"]
         self.assertEqual("bilibili", payload["platform"])
         self.assertEqual("12345", payload["external_account_id"])
+        self.assertEqual(60, request.call_args.kwargs["timeout"])
 
     @patch("backend_app.modules.opencli_monitor.service._request")
     def test_remove_account_forwards_permanent_delete(self, request):

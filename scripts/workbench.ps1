@@ -58,8 +58,15 @@ function Resolve-Chrome {
 function Start-CollectorBrowser([string]$BrowserPath, [string]$ProfileDirectory) {
   $existingOwner = Get-PortOwner 9222
   if ($existingOwner) {
+    $existingProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$existingOwner" -ErrorAction SilentlyContinue
+    $commandLine = [string]$existingProcess.CommandLine
+    $isManagedBrowser = $commandLine -like '*--remote-debugging-port=9222*' -and
+      $commandLine -like "*--user-data-dir=$ProfileDirectory*"
+    if (-not $isManagedBrowser) {
+      throw ("collector-browser 端口 9222 已被其他浏览器占用（PID {0}）。请关闭该浏览器后再启动工作台。" -f $existingOwner)
+    }
     Write-Host ("[ready] collector-browser already listens on 9222 (PID {0})" -f $existingOwner)
-    return @{ name = 'collector-browser'; port = 9222; ownerPid = $existingOwner; managed = $false }
+    return @{ name = 'collector-browser'; port = 9222; ownerPid = $existingOwner; managed = $true }
   }
   New-Item -ItemType Directory -Force -Path $RuntimeDir, $ProfileDirectory | Out-Null
   $arguments = @(
@@ -75,6 +82,18 @@ function Start-CollectorBrowser([string]$BrowserPath, [string]$ProfileDirectory)
   if (-not $owner) { throw 'The dedicated collector browser failed to expose local CDP port 9222.' }
   Write-Host ("[started] collector-browser http://127.0.0.1:9222 (PID {0})" -f $owner)
   return @{ name = 'collector-browser'; port = 9222; ownerPid = $owner; launcherPid = $process.Id; managed = $true }
+}
+
+function Register-CollectorBrowser([string]$AdminBaseUrl, [string]$CdpEndpoint) {
+  $body = @{ url = $CdpEndpoint; mode = 'cdp' } | ConvertTo-Json -Compress
+  try {
+    $response = Invoke-RestMethod -Method Post -Uri "$AdminBaseUrl/browsers/cdp-endpoint" -ContentType 'application/json' -Body $body -TimeoutSec 10
+    if (-not $response.success) { throw "OpenCLI Admin rejected the endpoint: $($response.error)" }
+    Write-Host ("[ready] collector-browser registered in CDP mode ({0})" -f $CdpEndpoint)
+  }
+  catch {
+    throw ("Could not register the collector browser with OpenCLI Admin: {0}" -f $_.Exception.Message)
+  }
 }
 
 function Test-ExpectedProcess([int]$ProcessId, [string]$ExpectedMarker) {
@@ -202,7 +221,16 @@ if ($config.opencliPath -and -not $env:OPENCLI_PATH) {
 if ($config.opencliPath -and -not $env:OPENCLI_BIN) {
   $env:OPENCLI_BIN = [IO.Path]::GetFullPath([string]$config.opencliPath)
 }
+if ($config.disableXiaohongshu) {
+  $env:DISABLE_XIAOHONGSHU = '1'
+}
 $opencliRoot = Resolve-ServiceRoot $config.opencliAdminProjectDir 'OPENCLI_ADMIN_PROJECT_DIR' @('opencli-admin', '自媒体内容拆解') 'backend\main.py'
+$videoJiexiRoot = Join-Path $RuntimeDir 'connectors\video-jiexi'
+$bundledYtDlpCandidates = @(
+  $(if ($videoJiexiRoot) { Join-Path $videoJiexiRoot 'tools\yt-dlp.exe' }),
+  (Join-Path $ProjectRoot 'bundled\video-jiexi\tools\yt-dlp.exe')
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+$bundledYtDlp = $bundledYtDlpCandidates | Select-Object -First 1
 $backendPython = @(
   (Join-Path $ProjectRoot '.venv311\Scripts\python.exe'),
   (Join-Path $ProjectRoot '.venv\Scripts\python.exe')
@@ -212,6 +240,9 @@ if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot 'sau_frontend\node_modu
 if (-not $env:YTDLP_PATH) {
   $configuredYtDlp = if ($config.ytDlpPath) { [IO.Path]::GetFullPath([string]$config.ytDlpPath) } else { Join-Path (Split-Path -Parent $backendPython) 'yt-dlp.exe' }
   if (Test-Path -LiteralPath $configuredYtDlp) { $env:YTDLP_PATH = $configuredYtDlp }
+}
+if (-not $env:YTDLP_PATH -and $bundledYtDlp -and (Test-Path -LiteralPath $bundledYtDlp)) {
+  $env:YTDLP_PATH = $bundledYtDlp
 }
 if ($config.videoJiexiDownloadDir -and -not $env:VIDEO_JIEXI_DOWNLOAD_DIR) {
   $env:VIDEO_JIEXI_DOWNLOAD_DIR = [IO.Path]::GetFullPath([string]$config.videoJiexiDownloadDir)
@@ -234,10 +265,11 @@ try {
     ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if ($opencliPython) {
       $services += Start-ServiceProcess 'opencli-admin' 8031 $opencliPython @('-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', '8031') $opencliRoot 'backend.main:app'
+      Register-CollectorBrowser 'http://127.0.0.1:8031/api/v1' 'http://localhost:9222'
     } else { Write-Host '[optional] OpenCLI Admin Python environment is missing; monitoring will be unavailable.' }
   } else { Write-Host '[optional] OpenCLI Admin project not found; monitoring will be unavailable.' }
   if ($opencliRoot -and -not $env:OPENCLI_ADMIN_BASE_URL) { $env:OPENCLI_ADMIN_BASE_URL = 'http://127.0.0.1:8031/api/v1' }
-  Write-Host '[embedded] video-jiexi parser is managed inside the 5409 backend and is not exposed as a second port.'
+  Write-Host '[embedded] video-jiexi is managed by the 5409 backend on a private loopback port.'
   $services += Start-ServiceProcess 'backend' 5409 $backendPython @('sau_backend.py') $ProjectRoot 'sau_backend.py'
   $services += Start-ServiceProcess 'frontend' 5174 'cmd.exe' @('/d', '/c', 'npm.cmd', 'run', 'dev', '--', '--host', '127.0.0.1') (Join-Path $ProjectRoot 'sau_frontend') 'sau_frontend'
 } catch {

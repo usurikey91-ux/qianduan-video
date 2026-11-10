@@ -6,9 +6,10 @@
 
 // 全局样式
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: 'SF Pro Text', 'PingFang SC', 'Noto Sans SC', 'Segoe UI', Inter, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
   color: var(--sau-ink);
   background: var(--sau-page);
   transition: color 0.18s ease, background-color 0.18s ease;
@@ -18,125 +19,208 @@ body {
   min-height: 100vh;
 }
 
-// Silver-gray workbench palette with mustard accents for long editing sessions.
+// Warm paper palette, learned from Beav: cream background, layered surfaces, low-saturation brown accent.
 :root {
   color-scheme: light;
-  --el-color-primary: #c89b2b;
-  --el-color-primary-light-3: #d7b45f;
-  --el-color-primary-light-5: #e3ca91;
-  --el-color-primary-light-7: #eee0bd;
-  --el-color-primary-light-8: #f4ead2;
-  --el-color-primary-light-9: #faf5e9;
-  --el-color-primary-dark-2: #9f7418;
-  --sau-ink: #202124;
-  --sau-ink-soft: #55585d;
-  --sau-muted: #7b7e83;
+  --el-color-primary: #a2784b;
+  --el-color-primary-light-3: #be9d79;
+  --el-color-primary-light-5: #d1bba5;
+  --el-color-primary-light-7: #e3d6c8;
+  --el-color-primary-light-8: #ece4da;
+  --el-color-primary-light-9: #f6f1eb;
+  --el-color-primary-dark-2: #89653f;
+  --el-color-success: #00b42a;
+  --el-color-warning: #ff7d00;
+  --el-color-danger: #f53f3f;
+  --el-border-radius-base: 8px;
+  --el-font-size-base: 13px;
+  --sau-ink: #191919;
+  --sau-ink-soft: #5d564b;
+  --sau-muted: #8d867b;
   --sau-paper: #ffffff;
-  --sau-paper-muted: #f6f6f5;
-  --sau-soft: #eceeef;
-  --sau-page: #f1f2f3;
-  --sau-line: #dcdde0;
-  --sau-accent: #c89b2b;
-  --sau-accent-hover: #b4861f;
-  --sau-accent-contrast: #211a08;
-  --sau-focus-ring: rgba(200, 155, 43, 0.22);
-  --sau-accent-soft: #fbf4df;
-  --sau-warm: #9f7418;
-  --sau-warm-soft: #f8f1df;
-  --sau-sidebar: #f0f1f2;
-  --sau-sidebar-line: #dadcdf;
-  --sau-sidebar-ink: #292b2f;
-  --sau-sidebar-muted: #676a70;
-  --sau-sidebar-hover: rgba(200, 155, 43, 0.11);
-  --sau-sidebar-active: #f1e5c5;
-  --sau-sidebar-active-ink: #49370b;
-  --sau-sidebar-panel: rgba(255, 255, 255, 0.58);
-  --sau-sidebar-control: #e4e5e7;
+  --sau-paper-muted: #f7f3ec;
+  --sau-soft: #f1ece5;
+  --sau-page: #fbfaf7;
+  --sau-line: #e7e0d4;
+  --sau-divider: #efe8de;
+  --sau-accent: #a2784b;
+  --sau-accent-hover: #89653f;
+  --sau-accent-contrast: #ffffff;
+  --sau-accent-border: #d9c3a2;
+  --sau-focus-ring: rgba(162, 120, 75, 0.18);
+  --sau-accent-soft: #f6ede0;
+  --sau-warm: #a2784b;
+  --sau-warm-soft: #f6ede0;
+  --sau-sidebar: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(247, 243, 236, 0.96) 100%);
+  --sau-sidebar-line: #e7e0d4;
+  --sau-sidebar-ink: #191919;
+  --sau-sidebar-muted: rgba(118, 130, 136, 0.96);
+  --sau-sidebar-hover: rgba(255, 255, 255, 0.6);
+  --sau-sidebar-active: rgba(255, 255, 255, 0.72);
+  --sau-sidebar-active-ink: #a2784b;
+  --sau-sidebar-panel: rgba(255, 255, 255, 0.6);
+  --sau-sidebar-control: rgba(241, 236, 229, 0.9);
   --sau-sidebar-control-active: #ffffff;
-  --sau-topbar: rgba(255, 255, 255, 0.92);
+  --sau-topbar: rgba(251, 250, 247, 0.86);
   --sau-cinnabar: var(--sau-warm);
   --sau-cinnabar-soft: var(--sau-warm-soft);
-  --sau-brass: #8d6819;
+  --sau-brass: #89653f;
   --sau-display-font: inherit;
+  --sau-shell: radial-gradient(1200px 500px at 90% -20%, rgba(162, 120, 75, 0.06), transparent 60%),
+    linear-gradient(180deg, #fbfaf7 0%, rgba(247, 243, 236, 0.78) 100%);
+  --sau-main-layer-border: rgba(255, 255, 255, 0.72);
+  --sau-glow: rgba(162, 120, 75, 0.06);
+  --sau-ring: 0 0 0 1px #e7e0d4 inset;
+  --sau-ring-strong: 0 0 0 1px #d9c3a2 inset;
+  --sau-shadow-sm: 0 8px 24px rgba(30, 24, 16, 0.05);
+  --sau-shadow-lg: 0 20px 48px rgba(30, 24, 16, 0.1);
+  --sau-success: #00b42a;
+  --sau-success-bg: #e8faec;
+  --sau-success-text: #0d7527;
+  --sau-warn: #ff7d00;
+  --sau-warn-bg: #fff4de;
+  --sau-warn-text: #7a4b00;
+  --sau-warn-line: rgba(255, 125, 0, 0.32);
+  --sau-danger: #f53f3f;
+  --sau-danger-bg: #fff0f0;
+  --sau-danger-text: #7a1b1b;
+  --sau-brand-red: #e11d48;
+  --sau-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --sau-ease-drawer: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root.dark {
   color-scheme: dark;
-  --el-color-primary: #ddb347;
-  --el-color-primary-light-3: #bd9b42;
-  --el-color-primary-light-5: #9b823d;
-  --el-color-primary-light-7: #665832;
-  --el-color-primary-light-8: #4a422d;
-  --el-color-primary-light-9: #322f27;
-  --el-color-primary-dark-2: #efca68;
-  --el-bg-color: #1b1c1f;
-  --el-bg-color-overlay: #24262a;
-  --el-fill-color-blank: #1b1c1f;
-  --el-fill-color-light: #27292d;
-  --el-fill-color-lighter: #2e3035;
-  --el-border-color: #414348;
-  --el-border-color-light: #37393e;
-  --el-text-color-primary: #f4f4f2;
-  --el-text-color-regular: #d0d1d2;
-  --el-text-color-secondary: #a4a6a9;
-  --sau-ink: #f4f4f2;
-  --sau-ink-soft: #c5c6c8;
-  --sau-muted: #989a9f;
-  --sau-paper: #1b1c1f;
-  --sau-paper-muted: #24262a;
-  --sau-soft: #2b2d31;
-  --sau-page: #121316;
-  --sau-line: #383a3f;
-  --sau-accent: #ddb347;
-  --sau-accent-hover: #edc65d;
-  --sau-accent-contrast: #211a08;
-  --sau-focus-ring: rgba(221, 179, 71, 0.2);
-  --sau-accent-soft: #332e20;
-  --sau-warm: #dfba57;
-  --sau-warm-soft: #302b20;
-  --sau-sidebar: #17181b;
-  --sau-sidebar-line: #303237;
-  --sau-sidebar-ink: #f1f1ef;
-  --sau-sidebar-muted: #aeb0b4;
-  --sau-sidebar-hover: rgba(221, 179, 71, 0.1);
-  --sau-sidebar-active: #ddb347;
-  --sau-sidebar-active-ink: #211a08;
-  --sau-sidebar-panel: rgba(255, 255, 255, 0.045);
-  --sau-sidebar-control: rgba(255, 255, 255, 0.055);
-  --sau-sidebar-control-active: #ddb347;
-  --sau-topbar: rgba(27, 28, 31, 0.94);
+  --el-color-primary: #4d9fff;
+  --el-color-primary-light-3: #3f80cb;
+  --el-color-primary-light-5: #33639a;
+  --el-color-primary-light-7: #284769;
+  --el-color-primary-light-8: #22374f;
+  --el-color-primary-light-9: #1c2736;
+  --el-color-primary-dark-2: #73b5ff;
+  --el-color-success: #23c343;
+  --el-color-warning: #ff9a2e;
+  --el-color-danger: #f76560;
+  --el-bg-color: #1a1a1a;
+  --el-bg-color-overlay: #1f1f1f;
+  --el-fill-color-blank: #1a1a1a;
+  --el-fill-color-light: #262626;
+  --el-fill-color-lighter: #2d2d2d;
+  --el-border-color: #333333;
+  --el-border-color-light: #2d2d2d;
+  --el-text-color-primary: #e5e5e5;
+  --el-text-color-regular: #c4c4c4;
+  --el-text-color-secondary: #a6a6a6;
+  --sau-ink: #e5e5e5;
+  --sau-ink-soft: #a6a6a6;
+  --sau-muted: #737373;
+  --sau-paper: #1a1a1a;
+  --sau-paper-muted: #262626;
+  --sau-soft: #2d2d2d;
+  --sau-page: #0e0e0e;
+  --sau-line: #333333;
+  --sau-divider: #2d2d2d;
+  --sau-accent: #4d9fff;
+  --sau-accent-hover: #73b5ff;
+  --sau-accent-contrast: #06130f;
+  --sau-accent-border: #4d9fff;
+  --sau-focus-ring: rgba(77, 159, 255, 0.2);
+  --sau-accent-soft: rgba(77, 159, 255, 0.14);
+  --sau-warm: #4d9fff;
+  --sau-warm-soft: rgba(77, 159, 255, 0.1);
+  --sau-sidebar: linear-gradient(180deg, rgba(26, 26, 26, 0.94) 0%, rgba(38, 38, 38, 0.9) 100%);
+  --sau-sidebar-line: #333333;
+  --sau-sidebar-ink: #e5e5e5;
+  --sau-sidebar-muted: rgba(158, 166, 170, 0.94);
+  --sau-sidebar-hover: rgba(26, 26, 26, 0.46);
+  --sau-sidebar-active: rgba(26, 26, 26, 0.6);
+  --sau-sidebar-active-ink: #4d9fff;
+  --sau-sidebar-panel: rgba(255, 255, 255, 0.03);
+  --sau-sidebar-control: rgba(255, 255, 255, 0.05);
+  --sau-sidebar-control-active: #2d2d2d;
+  --sau-topbar: rgba(14, 14, 14, 0.82);
   --sau-cinnabar: var(--sau-warm);
   --sau-cinnabar-soft: var(--sau-warm-soft);
-  --sau-brass: #dfba57;
+  --sau-brass: #73b5ff;
+  --sau-shell: radial-gradient(1200px 500px at 90% -20%, rgba(77, 159, 255, 0.12), transparent 60%),
+    linear-gradient(180deg, #0e0e0e 0%, rgba(38, 38, 38, 0.6) 100%);
+  --sau-main-layer-border: rgba(255, 255, 255, 0.08);
+  --sau-glow: rgba(77, 159, 255, 0.08);
+  --sau-ring: 0 0 0 1px #333333 inset;
+  --sau-ring-strong: 0 0 0 1px rgba(77, 159, 255, 0.45) inset;
+  --sau-shadow-sm: 0 10px 28px rgba(0, 0, 0, 0.32);
+  --sau-shadow-lg: 0 28px 64px rgba(0, 0, 0, 0.45);
+  --sau-success: #23c343;
+  --sau-success-bg: #153a20;
+  --sau-success-text: #bdfbd2;
+  --sau-warn: #ff9a2e;
+  --sau-warn-bg: #402f14;
+  --sau-warn-text: #ffe1a1;
+  --sau-warn-line: rgba(255, 154, 46, 0.35);
+  --sau-danger: #f76560;
+  --sau-danger-bg: #411f1f;
+  --sau-danger-text: #ffc5c7;
+  --sau-brand-red: #f55f5f;
+}
+
+body {
+  background: var(--sau-sidebar);
+}
+
+button,
+input,
+textarea,
+select {
+  transition-property: background-color, border-color, color, box-shadow, transform;
+  transition-duration: 160ms;
+  transition-timing-function: ease;
 }
 
 .el-card {
   border: 1px solid var(--sau-line) !important;
-  border-radius: 8px !important;
+  border-radius: 12px !important;
   background: var(--sau-paper) !important;
-  box-shadow: 0 8px 24px rgba(29, 43, 58, 0.055) !important;
+  box-shadow: none !important;
 }
 
 .el-card__header {
-  border-bottom: 1px solid rgba(226, 221, 213, 0.9) !important;
+  border-bottom: 1px solid var(--sau-divider) !important;
 }
 
+// Beav buttons: small, quiet, 1px border, 8px radius. Primary is a muted tint, not a loud block of color.
 .el-button {
+  --el-button-size: 30px;
+  height: 30px;
+  padding: 0 12px;
   border-radius: 8px !important;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
+
+  &:active:not(.is-disabled) { transform: scale(0.98); }
+}
+
+.el-button--small { height: 26px; padding: 0 10px; font-size: 12px; }
+
+.el-button:not(.el-button--primary):not(.is-text):not(.is-link):not(.el-button--danger):not(.el-button--success) {
+  border-color: var(--sau-line) !important;
+  background: var(--sau-paper) !important;
+  color: var(--sau-ink-soft) !important;
+
+  &:hover { background: var(--sau-paper-muted) !important; color: var(--sau-ink) !important; }
 }
 
 .el-button--primary {
-  border-color: var(--sau-accent) !important;
-  background: var(--sau-accent) !important;
-  color: var(--sau-accent-contrast) !important;
-  box-shadow: 0 6px 14px rgba(124, 90, 12, 0.18);
+  border-color: var(--sau-accent-border) !important;
+  background: var(--sau-accent-soft) !important;
+  color: var(--sau-accent) !important;
+  box-shadow: none !important;
 }
 
 .el-button--primary:hover,
 .el-button--primary:focus {
-  border-color: var(--sau-accent-hover) !important;
-  background: var(--sau-accent-hover) !important;
+  border-color: var(--sau-accent) !important;
+  background: var(--sau-accent-soft) !important;
+  color: var(--sau-accent-hover) !important;
 }
 
 .el-button.is-text {
@@ -154,7 +238,20 @@ body {
 .el-input__wrapper.is-focus,
 .el-select__wrapper.is-focused,
 .el-textarea__inner:focus {
-  box-shadow: 0 0 0 1px var(--sau-accent) inset, 0 0 0 3px var(--sau-focus-ring) !important;
+  box-shadow: 0 0 0 1px var(--sau-accent-border) inset, 0 0 0 3px var(--sau-focus-ring) !important;
+}
+
+.el-dialog {
+  border-radius: 16px !important;
+  box-shadow: var(--sau-shadow-lg) !important;
+}
+
+.el-drawer {
+  box-shadow: var(--sau-shadow-lg) !important;
+}
+
+.el-switch {
+  --el-switch-on-color: var(--sau-success);
 }
 
 .el-tag--info {
@@ -162,6 +259,107 @@ body {
   --el-tag-border-color: var(--sau-line);
   --el-tag-text-color: var(--sau-ink-soft);
 }
+
+// Beav filter chips: 1px bordered pill-ish buttons with a count; the selected one uses the accent tint.
+.sau-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.sau-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--sau-line);
+  border-radius: 8px;
+  background: var(--sau-paper);
+  color: var(--sau-ink-soft);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover { background: var(--sau-paper-muted); color: var(--sau-ink); }
+
+  em { color: var(--sau-muted); font-style: normal; font-variant-numeric: tabular-nums; }
+
+  &.is-active {
+    border-color: var(--sau-accent-border);
+    background: var(--sau-accent-soft);
+    color: var(--sau-accent);
+
+    em { color: var(--sau-accent); }
+  }
+
+  &.is-label { color: var(--sau-muted); cursor: default; &:hover { background: var(--sau-paper); } }
+}
+
+// Small status badge used on cards (Beav: "已生成 / 导入 / 计划项 / YouTube").
+.sau-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--sau-line);
+  border-radius: 5px;
+  background: var(--sau-paper-muted);
+  color: var(--sau-ink-soft);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+
+  &.is-accent { border-color: var(--sau-accent-border); background: var(--sau-accent-soft); color: var(--sau-accent); }
+  &.is-success { border-color: transparent; background: var(--sau-success-bg); color: var(--sau-success-text); }
+  &.is-warning { border-color: transparent; background: var(--sau-warn-bg); color: var(--sau-warn-text); }
+  &.is-danger { border-color: transparent; background: var(--sau-danger-bg); color: var(--sau-danger-text); }
+  &.is-red { border-color: transparent; background: var(--sau-brand-red); color: #fff; }
+}
+
+// Page header used on every page (Beav: icon tile + title + one-line description + count badges, actions on the right).
+.sau-page-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--sau-divider);
+  background: var(--sau-topbar);
+  backdrop-filter: saturate(1.05) blur(18px);
+}
+
+.sau-page-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--sau-accent-border);
+  border-radius: 8px;
+  background: var(--sau-accent-soft);
+  color: var(--sau-accent);
+}
+
+.sau-page-title {
+  min-width: 0;
+
+  h1 { margin: 0; color: var(--sau-ink); font-size: 15px; font-weight: 600; line-height: 1.3; }
+  p { margin: 1px 0 0; overflow: hidden; color: var(--sau-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+.sau-page-counts { display: flex; gap: 6px; margin-left: 4px; }
+.sau-page-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+.sau-page-filters {
+  display: grid;
+  gap: 10px;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--sau-divider);
+}
+
+.sau-page-body { padding: 18px 20px 32px; }
+
 
 .el-table {
   --el-table-border-color: var(--sau-line);

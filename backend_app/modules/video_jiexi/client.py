@@ -22,10 +22,10 @@ class VideoJiexiError(RuntimeError):
 def base_url(settings=None):
     settings = settings or {}
     configured = _configured_base_url(settings)
-    # 4200 was the development-only standalone service.  Treat it as a
-    # legacy value and transparently replace it with the bundled loopback
-    # instance so a clone only needs the 5174 workbench process.
-    if not configured or configured.rstrip("/") in {"http://127.0.0.1:4200", "http://localhost:4200"}:
+    # An explicitly configured parser is authoritative, including the local
+    # standalone service on port 4200. Only fall back to the bundled parser
+    # when no service address was configured at all.
+    if not configured:
         download_dir = download_root(settings)
         try:
             return embedded_manager.ensure(download_dir)
@@ -89,6 +89,10 @@ def start_download(inspection_id, format_id=None, kind="video", settings=None):
 
 def get_task(task_id, settings=None):
     return _request(f"/api/downloads/{task_id}", timeout=15, settings=settings)
+
+
+def cancel_task(task_id, settings=None):
+    return _request(f"/api/downloads/{task_id}", method="DELETE", timeout=15, settings=settings)
 
 
 def download_file(task_id, settings=None):

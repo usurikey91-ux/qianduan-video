@@ -19,6 +19,7 @@ import traceback
 import uuid
 import urllib.error
 import urllib.request
+import webbrowser
 from urllib.parse import urlparse
 from datetime import datetime
 from functools import wraps
@@ -2298,6 +2299,22 @@ def video_jiexi_open_folder():
     return jsonify({"code": 200, "msg": "success", "data": {"path": str(folder)}}), 200
 
 
+@app.route('/system/open-url', methods=['POST'])
+def system_open_url():
+    """Open a user-supplied HTTP(S) URL in the host system browser."""
+    payload = request.get_json(silent=True) or {}
+    target = str(payload.get('url') or '').strip()
+    parsed = urlparse(target)
+    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+        return jsonify({"code": 400, "msg": "仅支持打开 HTTP 或 HTTPS 链接", "data": None}), 400
+    try:
+        if not webbrowser.open(target, new=2):
+            return jsonify({"code": 500, "msg": "系统浏览器未能打开链接", "data": {"url": target}}), 500
+    except OSError as exc:
+        return jsonify({"code": 500, "msg": f"无法打开系统浏览器：{exc}", "data": {"url": target}}), 500
+    return jsonify({"code": 200, "msg": "success", "data": {"url": target}}), 200
+
+
 @app.route('/integrations/video-jiexi/inspect', methods=['POST'])
 def video_jiexi_inspect():
     payload = request.get_json(silent=True) or {}
@@ -2333,6 +2350,15 @@ def video_jiexi_download():
 def video_jiexi_task(task_id):
     try:
         result = video_jiexi_client.get_task(task_id, load_runtime_settings())
+        return jsonify({"code": 200, "msg": "success", "data": result}), 200
+    except video_jiexi_client.VideoJiexiError as exc:
+        return jsonify({"code": 502, "msg": str(exc), "data": None}), 502
+
+
+@app.route('/integrations/video-jiexi/tasks/<task_id>', methods=['DELETE'])
+def video_jiexi_cancel_task(task_id):
+    try:
+        result = video_jiexi_client.cancel_task(task_id, load_runtime_settings())
         return jsonify({"code": 200, "msg": "success", "data": result}), 200
     except video_jiexi_client.VideoJiexiError as exc:
         return jsonify({"code": 502, "msg": str(exc), "data": None}), 502

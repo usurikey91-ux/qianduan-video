@@ -134,8 +134,13 @@ function cookieArgs(browser) {
   return browser ? ['--cookies-from-browser', browser] : [];
 }
 
+let supportsJsRuntimes;
 function baseYtDlpArgs(browser) {
-  return ['--js-runtimes', 'node', ...cookieArgs(browser)];
+  if (supportsJsRuntimes === undefined) {
+    const help = spawnSync(YTDLP, ['--help'], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
+    supportsJsRuntimes = Boolean(help.stdout?.includes('--js-runtimes'));
+  }
+  return [...(supportsJsRuntimes ? ['--js-runtimes', 'node'] : []), ...cookieArgs(browser)];
 }
 
 function isLocalRequest(request) {
@@ -153,7 +158,8 @@ function isLocalRequest(request) {
   }
   const isPrivateIpv4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname);
   const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
-  if (new URL(`http://${host}`).port !== String(PORT) || (!isLocalHost && !isPrivateIpv4)) return false;
+  const boundPort = server.address()?.port ?? PORT;
+  if (new URL(`http://${host}`).port !== String(boundPort) || (!isLocalHost && !isPrivateIpv4)) return false;
   const site = String(request.headers['sec-fetch-site'] || '').toLowerCase();
   if (site === 'cross-site') return false;
   const origin = request.headers.origin;
@@ -913,6 +919,10 @@ async function renderDouyinPublicPage(url) {
       }
       await wait(300);
     }
+    const snapshot = await sendCdpCommand(socket, commandId++, 'Runtime.evaluate', {
+      expression: `({ html: document.documentElement.outerHTML, url: location.href })`
+    }, 10_000);
+    if (snapshot.result?.value?.html) return snapshot.result.value;
     throw new Error('抖音公开作品页加载超时。');
   } finally {
     if (socket && onNetworkMessage) socket.removeEventListener('message', onNetworkMessage);
@@ -933,9 +943,16 @@ async function renderDouyinPublicPage(url) {
 async function inspectDouyinRenderedMedia(url) {
   const parsed = new URL(url);
   if (!/(^|\.)douyin\.com$|(^|\.)iesdouyin\.com$/.test(parsed.hostname.toLowerCase())) return null;
-  const page = await renderDouyinPublicPage(url);
-  if (!page) return null;
-  return page.detail ? projectDouyinWebDetail(page.detail, page.url) : parseDouyinRenderedHtml(page.html, page.url);
+  const candidates = [url];
+  const fallback = douyinShareFallback(url);
+  if (fallback) candidates.push(fallback);
+  for (const candidate of candidates) {
+    const page = await renderDouyinPublicPage(candidate);
+    if (!page) continue;
+    const result = page.detail ? projectDouyinWebDetail(page.detail, page.url) : parseDouyinRenderedHtml(page.html, page.url);
+    if (result) return result;
+  }
+  return null;
 }
 
 async function fetchDouyinPublicPage(url) {

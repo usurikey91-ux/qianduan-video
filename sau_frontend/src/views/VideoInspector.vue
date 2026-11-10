@@ -1,32 +1,41 @@
 <template>
   <div class="video-inspector">
-    <div class="page-header">
-      <div>
+    <header class="sau-page-head">
+      <span class="sau-page-icon"><el-icon><VideoPlay /></el-icon></span>
+      <div class="sau-page-title">
         <h1>视频解析</h1>
-        <p>调用已配置的视频解析服务处理公开分享链接，并将结果保存到本地素材目录。</p>
+        <p>调用已配置的视频解析服务处理公开分享链接，并将结果保存到本地素材目录</p>
       </div>
-      <el-tag :type="serviceAvailable ? 'success' : 'warning'" effect="plain">
-        {{ serviceAvailable ? '解析服务在线' : '解析服务未连接' }}
-      </el-tag>
+      <div class="sau-page-counts">
+        <span class="sau-badge" :class="serviceAvailable ? 'is-success' : 'is-warning'">
+          {{ serviceAvailable ? '解析服务在线' : '解析服务未连接' }}
+        </span>
+      </div>
+      <div class="sau-page-actions">
+        <el-button :icon="FolderOpened" :disabled="!downloadDir" @click="openFolder">打开下载文件夹</el-button>
+      </div>
+    </header>
+
+    <div class="sau-page-filters">
+      <div class="sau-chips">
+        <span class="sau-chip is-label"><el-icon><Link /></el-icon>支持公开链接</span>
+        <span v-for="platform in supportedPlatforms" :key="platform" class="sau-badge">{{ platform }}</span>
+      </div>
     </div>
 
+    <div class="sau-page-body">
     <el-card shadow="never" class="inspect-card">
       <div class="inspect-row">
         <el-input v-model="url" clearable placeholder="粘贴抖音或其他平台分享链接" @keyup.enter="inspect" />
+        <el-select v-model="cookieBrowser" clearable placeholder="凭据" style="width: 130px">
+          <el-option label="不读取 Cookie" value="" />
+          <el-option label="Chrome Cookie" value="chrome" />
+          <el-option label="Edge Cookie" value="edge" />
+          <el-option label="Firefox Cookie" value="firefox" />
+        </el-select>
         <el-button type="primary" :loading="inspecting" @click="inspect">解析链接</el-button>
       </div>
-      <div class="service-note">{{ embeddedService ? '解析引擎已内置于本工作台，启动 5174 即可使用。' : `服务地址：${serviceBaseUrl || '未配置'}` }}</div>
-    </el-card>
-
-    <el-card shadow="never" class="support-card">
-      <template #header><div class="card-header"><span>支持的平台</span><el-tag size="small" effect="plain">公开链接</el-tag></div></template>
-      <div class="platform-list">
-        <span v-for="platform in supportedPlatforms" :key="platform" class="platform-item">{{ platform }}</span>
-      </div>
-      <div class="directory-row">
-        <div><span class="directory-label">下载目录</span><code>{{ downloadDir || '未读取到目录' }}</code></div>
-        <el-button :disabled="!downloadDir" @click="openFolder">打开下载文件夹</el-button>
-      </div>
+      <div class="service-note">下载目录 <code>{{ downloadDir || '未读取到目录' }}</code> · {{ embeddedService ? '解析引擎已内置于本工作台' : `服务地址：${serviceBaseUrl || '未配置'}` }}</div>
     </el-card>
 
     <el-card v-if="info" shadow="never" class="result-card">
@@ -60,6 +69,7 @@
         <el-button v-if="['queued','downloading','processing'].includes(task.state)" size="small" @click="stopWaiting">停止等待</el-button>
       </div>
     </el-card>
+    </div>
   </div>
 </template>
 
@@ -68,8 +78,10 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { videoJiexiApi } from '@/api/videoJiexi'
+import { FolderOpened, Link, VideoPlay } from '@element-plus/icons-vue'
 
 const url = ref('')
+const cookieBrowser = ref('')
 const info = ref(null)
 const formatId = ref('')
 const task = ref(null)
@@ -108,11 +120,15 @@ async function inspect() {
   if (!url.value.trim()) return ElMessage.warning('请先粘贴视频链接')
   inspecting.value = true
   try {
-    const response = await videoJiexiApi.inspect(url.value.trim())
+    const response = await videoJiexiApi.inspect(url.value.trim(), cookieBrowser.value)
     info.value = response.data
     formatId.value = response.data?.formats?.[0]?.id ? String(response.data.formats[0].id) : ''
     task.value = null
     ElMessage.success('解析完成')
+  } catch (error) {
+    info.value = null
+    const message = error?.response?.data?.msg || error?.response?.data?.error || error?.message || '解析链接失败'
+    ElMessage.error(message)
   } finally { inspecting.value = false }
 }
 
@@ -124,6 +140,9 @@ async function download() {
     task.value = response.data
     taskId.value = response.data?.id || ''
     startPolling()
+  } catch (error) {
+    const message = error?.response?.data?.msg || error?.response?.data?.error || error?.message || '下载任务创建失败'
+    ElMessage.error(message)
   } finally { downloading.value = false }
 }
 
@@ -133,13 +152,22 @@ async function importMaterial() {
   try {
     await videoJiexiApi.importMaterial(taskId.value)
     ElMessage.success('已导入素材库')
+  } catch (error) {
+    const message = error?.response?.data?.msg || error?.response?.data?.error || error?.message || '导入素材失败'
+    ElMessage.error(message)
   } finally { importing.value = false }
 }
 
 function stopWaiting() {
   if (pollTimer) clearInterval(pollTimer)
   pollTimer = null
-  task.value = { ...task.value, state: 'cancelled', error: '已停止等待；远端任务可能仍在后台处理' }
+  const currentTaskId = taskId.value
+  task.value = { ...task.value, state: 'cancelled', error: '正在取消任务…' }
+  if (currentTaskId) {
+    videoJiexiApi.cancel(currentTaskId)
+      .then((response) => { task.value = response.data || { ...task.value, state: 'cancelled', error: '任务已取消' } })
+      .catch((error) => { task.value = { ...task.value, state: 'error', error: error?.response?.data?.msg || '取消任务失败' } })
+  }
 }
 
 function startPolling() {
@@ -153,7 +181,12 @@ function startPolling() {
         clearInterval(pollTimer)
         if (task.value.state === 'completed') ElMessage.success('下载完成，可以导入素材库')
       }
-    } catch { clearInterval(pollTimer) }
+    } catch (error) {
+      clearInterval(pollTimer)
+      pollTimer = null
+      task.value = { ...task.value, state: 'error', error: error?.response?.data?.msg || error?.message || '任务状态获取失败' }
+      ElMessage.error(task.value.error)
+    }
   }, 2000)
 }
 
@@ -170,10 +203,8 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
 
 <style scoped>
-.video-inspector { display: grid; gap: 18px; }
-.page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
-.page-header h1 { margin:0; color:var(--sau-ink); font-size:28px; }
-.page-header p { margin:8px 0 0; color:var(--sau-ink-soft); }
+.video-inspector { min-width:0; }
+.sau-page-body { display:grid; gap:14px; max-width:960px; }
 .inspect-row { display:flex; gap:12px; }
 .inspect-row .el-input { flex:1; }
 .service-note { margin-top:10px; color:var(--sau-muted); font-size:12px; }
@@ -185,12 +216,6 @@ onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })
 .format-row { display:flex; gap:12px; align-items:center; margin-top:20px; }
 .task-message { margin:12px 0; color:var(--sau-ink-soft); }
 .task-actions { display:flex; align-items:center; gap:10px; }
-.support-card { margin-top: 0; }
-.platform-list { display:flex; flex-wrap:wrap; gap:10px; }
-.platform-item { padding:7px 12px; border:1px solid var(--sau-line); border-radius:999px; background:var(--sau-paper-muted); color:var(--sau-ink); font-size:13px; }
-.directory-row { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:18px; padding-top:16px; border-top:1px solid var(--sau-line); }
-.directory-row > div { min-width:0; display:grid; gap:6px; }
-.directory-label { color:var(--sau-ink-soft); font-size:12px; }
-.directory-row code { color:var(--sau-ink); font-size:12px; overflow-wrap:anywhere; }
+.service-note code { color:var(--sau-ink-soft); font-size:12px; overflow-wrap:anywhere; }
 @media (max-width: 700px) { .inspect-row,.format-row { flex-direction:column; align-items:stretch; } .result-grid { grid-template-columns:1fr; } }
 </style>

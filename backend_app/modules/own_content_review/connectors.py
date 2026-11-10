@@ -275,6 +275,8 @@ def sync_douyin(db_path: Path, account_name: str = "抖音创作者中心", rece
 
 
 def sync_xiaohongshu(db_path: Path, account_name: str = "我的小红书账号", limit: int = 20) -> dict:
+    if os.environ.get("DISABLE_XIAOHONGSHU", "").strip() == "1":
+        raise RuntimeError("小红书采集已由本地安全开关停用")
     cli = _resolve_opencli()
     output = _run([
         cli, "xiaohongshu", "creator-notes-summary", "--limit", str(limit),
