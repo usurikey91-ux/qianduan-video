@@ -195,3 +195,7 @@ data/
 cookiesFile
 uploadFile
 videoFile
+
+# 浏览器登录数据（含账号信息，不提交）
+.capture-profile*-hold/
+capture-edge-*/
